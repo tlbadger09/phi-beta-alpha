@@ -8,7 +8,7 @@ import sqlite3
 import hashlib
 import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 
 from search import (
     run_search, open_db, TARGET_STATES, get_states_with_ocr,
@@ -682,6 +682,114 @@ def begin_verification():
                            states=TARGET_STATES, counties=GA_COUNTIES,
                            submitted=True, submission_id=submission_id,
                            anc_name=f"{anc_first} {anc_last}")
+
+
+@app.route("/submission/<submission_id>")
+def submission_status(submission_id):
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=5)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM verification_submissions WHERE submission_id=?",
+            (submission_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return render_template("submission_status.html", submission=None, not_found=True)
+        return render_template("submission_status.html", submission=dict(row), not_found=False)
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+@app.route("/admin/submissions")
+def admin_submissions():
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=5)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT * FROM verification_submissions ORDER BY submitted_at DESC
+        """).fetchall()
+        conn.close()
+        counts = {
+            "total":    len(rows),
+            "pending":  sum(1 for r in rows if r["status"] == "pending"),
+            "verified": sum(1 for r in rows if r["status"] == "verified"),
+            "rejected": sum(1 for r in rows if r["status"] == "rejected"),
+        }
+        return render_template("admin_submissions.html",
+                               submissions=[dict(r) for r in rows], counts=counts)
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+@app.route("/admin/submissions/<submission_id>/approve", methods=["POST"])
+def admin_approve(submission_id):
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+    sub = conn.execute(
+        "SELECT * FROM verification_submissions WHERE submission_id=?",
+        (submission_id,)
+    ).fetchone()
+    if not sub:
+        conn.close()
+        return "Not found", 404
+
+    sub = dict(sub)
+    member_id = f"MEMBER-{sub['anc_last'].upper()}-{sub['member_name'].split()[0].upper()}-{sub.get('anc_year') or 'XXXX'}"
+
+    conn.execute("""
+        INSERT OR IGNORE INTO members
+        (member_id, first_name, last_name, birth_year, birth_state, birth_county,
+         race, notes, submitted_by, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, (
+        member_id,
+        sub["member_name"].split()[0] if sub["member_name"] else "",
+        sub["member_name"].split()[-1] if sub["member_name"] else "",
+        int(sub["anc_year"]) if sub.get("anc_year") and str(sub["anc_year"]).isdigit() else None,
+        sub.get("anc_state", ""),
+        sub.get("anc_county", ""),
+        "Black",
+        sub.get("notes", ""),
+        sub.get("member_name", ""),
+        datetime.datetime.now().isoformat(),
+    ))
+
+    conn.execute("""
+        INSERT OR IGNORE INTO lineage_ancestors
+        (member_id, generation, relationship, first_name, last_name,
+         birth_year, birth_state, birth_county, ipums_histid, verified, notes, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        member_id, 1, "Direct ancestor (1870)",
+        sub.get("anc_first", ""), sub.get("anc_last", ""),
+        int(sub["anc_year"]) if sub.get("anc_year") and str(sub["anc_year"]).isdigit() else None,
+        sub.get("anc_state", ""), sub.get("anc_county", ""),
+        sub.get("ipums_histid", ""),
+        1,
+        f"Verified from submission {submission_id}. OCR record: {sub.get('ocr_id','')}.",
+        datetime.datetime.now().isoformat(),
+    ))
+
+    conn.execute(
+        "UPDATE verification_submissions SET status='verified' WHERE submission_id=?",
+        (submission_id,)
+    )
+    conn.commit()
+    conn.close()
+    return redirect("/admin/submissions")
+
+
+@app.route("/admin/submissions/<submission_id>/reject", methods=["POST"])
+def admin_reject(submission_id):
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+    conn.execute(
+        "UPDATE verification_submissions SET status='rejected' WHERE submission_id=?",
+        (submission_id,)
+    )
+    conn.commit()
+    conn.close()
+    return redirect("/admin/submissions")
 
 
 @app.route("/preview-cert")

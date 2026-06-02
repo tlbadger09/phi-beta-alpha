@@ -24,11 +24,12 @@
         is complete and your lineage chain is ready.
       </p>
       <p style="font-size:0.8rem; color:#888; margin-top:12px;">
-        Save your reference number: <strong>{{ submission_id }}</strong>
+        Save your reference number: <strong style="font-family:monospace;">{{ submission_id }}</strong>
       </p>
       <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
-        <a href="/" class="btn-primary">Search Again</a>
-        <a href="/members" class="btn-gold">View Verified Members</a>
+        <a href="/submission/{{ submission_id }}" class="btn-primary">Check Status</a>
+        <a href="/" class="btn-gold">Search Again</a>
+        <a href="/members" style="padding:7px 16px; border:1px solid var(--border); border-radius:4px; color:var(--blue); text-decoration:none; font-size:0.85rem;">View Verified Members</a>
       </div>
     </div>
   </div>

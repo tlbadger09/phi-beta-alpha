@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Submission Status{% endblock %}
+
+{% block content %}
+<div style="max-width:600px; margin:32px auto 0;">
+  <a href="/" class="back-link">&#8592; Back to Search</a>
+
+  {% if not_found %}
+  <div class="no-results" style="margin-top:20px;">
+    <h3>Submission not found</h3>
+    <p>No submission matches that reference number. Double-check your confirmation email or
+    <a href="/">search again</a> to submit a new request.</p>
+  </div>
+
+  {% else %}
+  <div class="result-card" style="margin-top:24px;">
+    <div class="result-header">
+      <div>
+        <div class="result-name">Verification Request</div>
+        <div class="result-county">
+          {{ submission.anc_first }} {{ submission.anc_last }}
+          {% if submission.anc_year %} &middot; ~{{ submission.anc_year }}{% endif %}
+          {% if submission.anc_state %} &middot; {{ submission.anc_state }}{% endif %}
+        </div>
+      </div>
+      <span class="tier-badge
+        {% if submission.status == 'verified' %}tier-3
+        {% elif submission.status == 'rejected' %}tier-0
+        {% else %}tier-1{% endif %}">
+        {{ submission.status|title }}
+      </span>
+    </div>
+
+    <div class="result-body" style="padding-top:16px;">
+
+      {% if submission.status == 'pending' %}
+      <div style="background:#fff8e6; border-left:4px solid var(--gold); padding:14px 18px; border-radius:4px; margin-bottom:16px;">
+        <strong>Your submission is under review.</strong><br>
+        <span style="font-size:0.85rem; color:#555; line-height:1.6;">
+          The ΦΒΑ research team will cross-reference your ancestor's record against
+          primary source documents. Review typically takes 5–14 business days.
+          Check back here or watch for an email update.
+        </span>
+      </div>
+
+      {% elif submission.status == 'verified' %}
+      <div style="background:#e8f5e9; border-left:4px solid #1a6e3a; padding:14px 18px; border-radius:4px; margin-bottom:16px;">
+        <strong style="color:#1a6e3a;">&#10003; Your lineage has been verified!</strong><br>
+        <span style="font-size:0.85rem; color:#333; line-height:1.6;">
+          Your ancestor <strong>{{ submission.anc_first }} {{ submission.anc_last }}</strong>
+          has been confirmed in our verified database.
+          You are a documented Foundational Black American.
+        </span>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+        <a href="/members" class="btn-primary">View Verified Members</a>
+      </div>
+
+      {% elif submission.status == 'rejected' %}
+      <div style="background:#fdecea; border-left:4px solid #b71c1c; padding:14px 18px; border-radius:4px; margin-bottom:16px;">
+        <strong style="color:#b71c1c;">Unable to verify at this time.</strong><br>
+        <span style="font-size:0.85rem; color:#555; line-height:1.6;">
+          We were unable to confirm the documentary chain for this submission.
+          This may mean additional records are needed. Please
+          <a href="/">search again</a> and resubmit with additional documentation.
+        </span>
+      </div>
+      {% endif %}
+
+      <table style="width:100%; font-size:0.82rem; border-collapse:collapse; margin-top:8px;">
+        <tr><td style="padding:5px 0; color:#888; width:160px;">Reference #</td><td><strong style="font-family:monospace;">{{ submission.submission_id }}</strong></td></tr>
+        <tr><td style="padding:5px 0; color:#888;">Submitted</td><td>{{ submission.submitted_at[:10] if submission.submitted_at else '—' }}</td></tr>
+        <tr><td style="padding:5px 0; color:#888;">Your name</td><td>{{ submission.member_name }}</td></tr>
+        <tr><td style="padding:5px 0; color:#888;">Ancestor</td><td>{{ submission.anc_first }} {{ submission.anc_last }}{% if submission.anc_year %}, ~{{ submission.anc_year }}{% endif %}</td></tr>
+        <tr><td style="padding:5px 0; color:#888;">State</td><td>{{ submission.anc_state or '—' }}</td></tr>
+        {% if submission.ocr_id %}<tr><td style="padding:5px 0; color:#888;">OCR Record</td><td style="font-family:monospace; font-size:0.75rem;">{{ submission.ocr_id }}</td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div style="margin-top:24px; text-align:center;">
+    <p style="font-size:0.82rem; color:#888;">
+      Questions? Contact <a href="mailto:tlbadger09@gmail.com" style="color:var(--blue);">tlbadger09@gmail.com</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

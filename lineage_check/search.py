@@ -684,8 +684,9 @@ def run_search(last_name, first_name, birth_year=None, state="Georgia",
     census_matches = [m for m in deduped if m["source_table"] != "bureau_patients"]
     bureau_matches = [m for m in deduped if m["source_table"] == "bureau_patients"]
 
-    # Sort census matches by name confidence before IPUMS verification
-    census_matches.sort(key=lambda x: x.get("name_confidence", 0.7), reverse=True)
+    # Sort: Black records first, then by name confidence — ensures is_black records
+    # are in the top-N before the IPUMS cutoff, not crowded out by non-Black matches
+    census_matches.sort(key=lambda x: (int(x.get("is_black") or 0), x.get("name_confidence", 0.7)), reverse=True)
     top_census = census_matches[:max_results]
     top_bureau = bureau_matches[:max_results]
 

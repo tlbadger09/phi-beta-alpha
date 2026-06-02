@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Admin — Submissions{% endblock %}
+
+{% block content %}
+<div style="margin-top:20px;">
+  <div class="results-header">
+    <h2>&#128203; Verification Submissions</h2>
+    <p class="query-summary">
+      {{ counts.total }} total &nbsp;&middot;&nbsp;
+      <strong style="color:#b45309;">{{ counts.pending }} pending</strong> &nbsp;&middot;&nbsp;
+      <span style="color:#1a6e3a;">{{ counts.verified }} verified</span> &nbsp;&middot;&nbsp;
+      <span style="color:#888;">{{ counts.rejected }} rejected</span>
+    </p>
+  </div>
+
+  {% if not submissions %}
+  <div class="no-results">
+    <h3>No submissions yet</h3>
+    <p>Submissions will appear here when members use the Begin Verification form.</p>
+  </div>
+  {% else %}
+
+  <div style="overflow-x:auto;">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Member</th>
+          <th>Email</th>
+          <th>Ancestor</th>
+          <th>Location</th>
+          <th>OCR / HISTID</th>
+          <th>Notes</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr class="admin-row {% if s.status == 'verified' %}row-verified{% elif s.status == 'rejected' %}row-rejected{% else %}row-pending{% endif %}">
+          <td class="admin-date">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+          <td class="admin-member">
+            <strong>{{ s.member_name }}</strong>
+            <div class="admin-ref">{{ s.submission_id }}</div>
+          </td>
+          <td>{{ s.member_email or '—' }}</td>
+          <td class="admin-ancestor">
+            <strong>{{ s.anc_first }} {{ s.anc_last }}</strong>
+            {% if s.anc_year %}<div style="font-size:0.75rem;color:#888;">~{{ s.anc_year }}</div>{% endif %}
+          </td>
+          <td>
+            {{ s.anc_county or '' }}{% if s.anc_county and s.anc_state %}, {% endif %}{{ s.anc_state or '—' }}
+          </td>
+          <td class="admin-ids">
+            {% if s.ocr_id %}<div class="admin-id-val">{{ s.ocr_id[:20] }}{% if s.ocr_id|length > 20 %}…{% endif %}</div>{% endif %}
+            {% if s.ipums_histid %}<div class="admin-id-val" style="color:#888;">{{ s.ipums_histid[:20] }}{% if s.ipums_histid|length > 20 %}…{% endif %}</div>{% endif %}
+            {% if not s.ocr_id and not s.ipums_histid %}&mdash;{% endif %}
+          </td>
+          <td class="admin-notes">
+            {% if s.notes %}
+              <span title="{{ s.notes }}">{{ s.notes[:60] }}{% if s.notes|length > 60 %}…{% endif %}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="status-badge status-{{ s.status }}">{{ s.status|title }}</span>
+          </td>
+          <td class="admin-actions">
+            {% if s.status == 'pending' %}
+            <form action="/admin/submissions/{{ s.submission_id }}/approve" method="POST" style="display:inline;">
+              <button type="submit" class="admin-btn approve-btn"
+                      onclick="return confirm('Approve {{ s.anc_first }} {{ s.anc_last }} for {{ s.member_name }}?')">
+                &#10003; Approve
+              </button>
+            </form>
+            <form action="/admin/submissions/{{ s.submission_id }}/reject" method="POST" style="display:inline;">
+              <button type="submit" class="admin-btn reject-btn"
+                      onclick="return confirm('Reject this submission?')">
+                &#10005; Reject
+              </button>
+            </form>
+            {% elif s.status == 'verified' %}
+            <a href="/members" class="admin-btn neutral-btn" style="text-decoration:none;">Members &#8599;</a>
+            {% else %}
+            <span style="color:#aaa; font-size:0.8rem;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.admin-table {
+  width: 100%; border-collapse: collapse; font-size: 0.83rem;
+  background: #fff; border-radius: var(--radius); overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.admin-table thead tr { background: var(--blue); color: #fff; }
+.admin-table th { padding: 10px 12px; text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.admin-table td { padding: 10px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+.admin-row:hover td { background: #fafcff; }
+.row-verified td { background: #f0faf4; }
+.row-rejected td { background: #fafafa; opacity: 0.7; }
+.admin-date   { color: #888; font-size: 0.78rem; white-space: nowrap; }
+.admin-member { min-width: 120px; }
+.admin-ref    { font-size: 0.68rem; color: #aaa; font-family: monospace; margin-top: 2px; }
+.admin-ancestor { min-width: 120px; }
+.admin-ids    { font-size: 0.72rem; font-family: monospace; }
+.admin-id-val { margin-bottom: 2px; }
+.admin-notes  { max-width: 160px; font-size: 0.78rem; color: #555; }
+.status-badge {
+  padding: 2px 9px; border-radius: 10px; font-size: 0.72rem; font-weight: bold;
+}
+.status-pending  { background: #fff3cd; color: #7a5c00; }
+.status-verified { background: #e8f5e9; color: #1a6e3a; }
+.status-rejected { background: #fdecea; color: #b71c1c; }
+.admin-btn {
+  padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;
+  border: none; cursor: pointer; font-family: inherit; margin-right: 4px;
+}
+.approve-btn { background: #1a6e3a; color: #fff; }
+.approve-btn:hover { background: #145c30; }
+.reject-btn  { background: #b71c1c; color: #fff; }
+.reject-btn:hover { background: #8e1515; }
+.neutral-btn { background: #eee; color: #333; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; }
+</style>
+{% endblock %}
