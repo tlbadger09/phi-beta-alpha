@@ -1016,3 +1016,44 @@ footer strong { color: var(--gold); }
 .cluster-item:hover .cluster-detail { color: #fff; }
 .cluster-name   { font-weight: bold; color: var(--blue); font-size:0.88rem; }
 .cluster-detail { font-size: 0.75rem; color: #666; margin-top:2px; }
+
+/* ── Results summary table ───────────────────────────────────────────────── */
+.results-summary {
+  background: #fff;
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.summary-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+.summary-table thead tr { background: var(--blue); color: #fff; }
+.summary-table th { padding:9px 12px; text-align:left; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; font-weight:bold; }
+.summary-row { cursor:pointer; transition:background 0.1s; }
+.summary-row:hover { background: #f0f4ff; }
+.summary-row td { padding:8px 12px; border-bottom:1px solid var(--border); }
+.sum-num  { color:#aaa; font-size:0.75rem; width:28px; }
+.sum-name { font-weight:bold; color:var(--blue); }
+.sum-black{ color:var(--green); font-weight:bold; text-align:center; }
+.conf-mini {
+  display:inline-block; padding:2px 8px; border-radius:10px;
+  font-size:0.75rem; font-weight:bold;
+}
+.conf-mini.conf-high { background:#e8f5e9; color:#1a6e3a; }
+.conf-mini.conf-med  { background:#fff8e6; color:#7a5c00; }
+.conf-mini.conf-low  { background:#fdecea; color:#b71c1c; }
+
+/* ── Preview certificate button ──────────────────────────────────────────── */
+.btn-preview {
+  display: inline-block;
+  padding: 7px 16px;
+  background: transparent;
+  border: 2px solid var(--gold);
+  color: var(--blue);
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: bold;
+  transition: all 0.15s;
+  margin-right: 8px;
+}
+.btn-preview:hover { background: var(--gold); color: var(--blue); }

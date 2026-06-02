@@ -126,13 +126,41 @@
 
   {% else %}
 
+  {% if results|length > 4 %}
+  <div class="results-summary">
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Name</th><th>Location</th><th>~Born</th><th>Confidence</th><th>Black</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        {% set m = r.match %}
+        <tr class="summary-row" onclick="document.getElementById('result-{{ loop.index0 }}').scrollIntoView({behavior:'smooth',block:'start'})">
+          <td class="sum-num">{{ loop.index }}</td>
+          <td class="sum-name">
+            {% if m.first_name %}{{ m.first_name }} {% endif %}{{ m.last_name }}
+            {% if m.near_miss %}<span class="near-miss-badge">~</span>{% endif %}
+          </td>
+          <td>{{ m.county or '—' }}, {{ m.state or '—' }}</td>
+          <td>{% if m.birth_year %}~{{ m.birth_year }}{% else %}—{% endif %}</td>
+          <td><span class="conf-mini {% if r.confidence >= 70 %}conf-high{% elif r.confidence >= 45 %}conf-med{% else %}conf-low{% endif %}">{{ r.confidence }}%</span></td>
+          <td class="sum-black">{% if m.is_black %}&#10003;{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {% for r in results %}
   {% set m = r.match %}
   {% set conf = r.confidence %}
   {% set tier = r.tier %}
   {% set is_bureau = m.source_table == 'bureau_patients' %}
 
-  <div class="result-card {% if is_bureau %}bureau-card{% endif %}{% if m.near_miss %} near-miss-card{% endif %}">
+  <div id="result-{{ loop.index0 }}" class="result-card {% if is_bureau %}bureau-card{% endif %}{% if m.near_miss %} near-miss-card{% endif %}">
     <div class="result-header">
       <div>
         <div class="result-name">
@@ -352,7 +380,13 @@
       {% if not is_bureau %}
       <div class="cta-row">
         <span class="cta-label">Is this your ancestor?</span>
-        <a href="/begin?first={{ m.first_name|urlencode }}&last={{ m.last_name|urlencode }}&year={{ m.birth_year or '' }}&state={{ m.state|urlencode }}&county={{ m.county|urlencode }}{% if r.ipums %}&histid={{ r.ipums.histid|urlencode }}{% endif %}"
+        {% if conf >= 70 and m.is_black %}
+        <a href="/preview-cert?first={{ m.first_name|urlencode }}&last={{ m.last_name|urlencode }}&year={{ m.birth_year or '' }}&state={{ m.state|urlencode }}&county={{ m.county|urlencode }}&conf={{ conf }}{% if r.ipums %}&histid={{ r.ipums.histid|urlencode }}&tier={{ r.ipums.tier }}{% endif %}&ocr_id={{ m.ocr_id|urlencode }}"
+           class="btn-preview" target="_blank">
+          Preview Certificate
+        </a>
+        {% endif %}
+        <a href="/begin?first={{ m.first_name|urlencode }}&last={{ m.last_name|urlencode }}&year={{ m.birth_year or '' }}&state={{ m.state|urlencode }}&county={{ m.county|urlencode }}&ocr_id={{ m.ocr_id|urlencode }}{% if r.ipums %}&histid={{ r.ipums.histid|urlencode }}{% endif %}"
            class="btn-begin">
           Begin Verification
         </a>

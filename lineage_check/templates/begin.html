@@ -114,7 +114,7 @@
         <div class="form-group" style="grid-column:1/-1;">
           <label for="ocr_id">OCR Record ID or FamilySearch ARK</label>
           <input type="text" id="ocr_id" name="ocr_id"
-                 value="{{ prefill.ipums_histid if prefill else '' }}"
+                 value="{{ prefill.ocr_id if prefill else '' }}"
                  placeholder="e.g. OCR-1A09D86215AD or ark:/61903/3:1:&hellip;">
           <span class="hint">Found in search results under Source / HISTID</span>
         </div>

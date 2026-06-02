@@ -620,6 +620,7 @@ def begin_verification():
             "anc_year":     request.args.get("year", ""),
             "anc_state":    request.args.get("state", "Georgia"),
             "anc_county":   request.args.get("county", ""),
+            "ocr_id":       request.args.get("ocr_id", ""),
             "ipums_histid": request.args.get("histid", ""),
         }
         return render_template("begin.html", nav_page="search",
@@ -681,6 +682,44 @@ def begin_verification():
                            states=TARGET_STATES, counties=GA_COUNTIES,
                            submitted=True, submission_id=submission_id,
                            anc_name=f"{anc_first} {anc_last}")
+
+
+@app.route("/preview-cert")
+def preview_cert():
+    """Provisional certificate preview from a search result — no verification required."""
+    first      = request.args.get("first", "").strip()
+    last       = request.args.get("last", "").strip()
+    birth_year = request.args.get("year", "").strip()
+    state      = request.args.get("state", "Georgia").strip()
+    county     = request.args.get("county", "").strip()
+    conf       = request.args.get("conf", "0")
+    histid     = request.args.get("histid", "").strip()
+    tier       = int(request.args.get("tier", "0") or 0)
+    ocr_id     = request.args.get("ocr_id", "").strip()
+
+    if not last:
+        return "Missing ancestor name", 400
+
+    tier_labels = {3: "Tier 3 — Linked across 1870, 1880, 1900 censuses",
+                   2: "Tier 2 — Linked across two censuses",
+                   1: "Tier 1 — Single census record",
+                   0: "Pending verification"}
+
+    surname_key = last.lower()
+    enslaver = ENSLAVER_DB.get(surname_key)
+
+    cert_id = hashlib.md5(f"{ocr_id or last}-{first}-{datetime.date.today()}".encode()).hexdigest()[:12].upper()
+    today   = datetime.date.today().strftime("%B %d, %Y")
+
+    return render_template("preview_cert.html",
+                           first=first, last=last,
+                           birth_year=birth_year, state=state, county=county,
+                           confidence=int(conf or 0),
+                           histid=histid, tier=tier,
+                           tier_label=tier_labels.get(tier, "Pending"),
+                           ocr_id=ocr_id,
+                           enslaver=enslaver,
+                           cert_id=cert_id, today=today)
 
 
 if __name__ == "__main__":
