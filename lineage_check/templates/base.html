@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ΦΒΑ Lineage Check{% endblock %} — Phi Beta Alpha Historical Lineage Society</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="crest">⚖</div>
+    <div class="brand">
+      <div class="greek">ΦΒΑ</div>
+      <h1>Phi Beta Alpha Historical Lineage Society</h1>
+      <p>Preserving and verifying the genealogical lineage of Foundational Black Americans</p>
+    </div>
+  </div>
+  <div class="tagline">"You don't join it, you were born it."</div>
+  <nav class="header-nav">
+    <a href="/" class="nav-link {% if nav_page == 'search' %}active{% endif %}">Search</a>
+    <a href="/members" class="nav-link {% if nav_page == 'members' %}active{% endif %}">Verified Members</a>
+    <a href="/status" class="nav-link {% if nav_page == 'status' %}active{% endif %}">Pipeline Status</a>
+  </nav>
+</header>
+
+{% if pipeline_active %}
+<div class="pipeline-live-bar">
+  <div class="pipeline-live-inner">
+    <span class="pipeline-pulse"></span>
+    <strong>Indexing now:</strong>&nbsp;
+    {{ pipeline_active.state }} Reel {{ pipeline_active.reel }} &mdash;
+    {{ "{:,}".format(pipeline_active.pages_done) }} pages &bull;
+    {{ "{:,}".format(pipeline_active.records) }} records indexed
+    <span class="pipeline-pct">{{ pipeline_active.pct }}%</span>
+    <a href="/status" class="pipeline-live-link">Live progress &rarr;</a>
+  </div>
+</div>
+{% endif %}
+
+{% block stats_bar %}{% endblock %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer>
+  <strong>Phi Beta Alpha Historical Lineage Society, Inc.</strong> &nbsp;&middot;&nbsp;
+  EIN 41-4969999 &nbsp;&middot;&nbsp; phibetaalpha.org &nbsp;&middot;&nbsp;
+  501(c)(3) Approved &nbsp;&middot;&nbsp;
+  "Trying to get that old thang back."
+</footer>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

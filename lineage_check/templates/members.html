@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Verified Members{% endblock %}
+
+{% block content %}
+  <a href="/" class="back-link">&#8592; Back to Search</a>
+
+  <div class="results-header" style="margin-top:20px;">
+    <h2>Verified Lineage Members</h2>
+    <p class="query-summary">
+      {{ members|length }} member{{ 's' if members|length != 1 else '' }} with documented lineage chains
+    </p>
+  </div>
+
+  {% for m in members %}
+  <div class="result-card" style="margin-bottom:16px;">
+    <div class="result-header">
+      <div>
+        <div class="result-name">{{ m.first_name }} {{ m.last_name }}</div>
+        <div class="result-county">
+          {% if m.birth_county %}{{ m.birth_county }} County, {{ m.birth_state }}{% elif m.birth_state %}{{ m.birth_state }}{% endif %}
+          {% if m.birth_year %} &middot; Born ~{{ m.birth_year }}{% endif %}
+          &nbsp;&middot;&nbsp; {{ m.ancestor_count }} ancestors documented
+          ({{ m.verified_count }} verified)
+        </div>
+      </div>
+      <div class="confidence-badge">
+        <span class="tier-badge tier-3">Verified FBA</span>
+      </div>
+    </div>
+    <div class="result-body" style="display:flex; gap:12px; flex-wrap:wrap; padding-top:16px;">
+      <a href="/lineage/{{ m.member_id }}" class="btn-primary">
+        View Lineage Chain
+      </a>
+      <a href="/certificate/{{ m.member_id }}" class="btn-gold">
+        Print Certificate
+      </a>
+    </div>
+  </div>
+  {% else %}
+  <div class="no-results">
+    <h3>No verified members yet</h3>
+    <p>Search the 1870 Census to find your ancestor and begin your verification process.</p>
+    <div style="margin-top:20px;">
+      <a href="/" class="btn-primary">Search the Census</a>
+    </div>
+  </div>
+  {% endfor %}
+{% endblock %}

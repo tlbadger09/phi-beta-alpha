@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lineage Verification Certificate — ΦΒΑ</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+      .cert-page { box-shadow: none; }
+    }
+
+    .cert-page {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      padding: 48px;
+      font-family: Georgia, serif;
+    }
+
+    .cert-border {
+      border: 6px double var(--gold);
+      padding: 32px;
+      position: relative;
+    }
+
+    .cert-header {
+      text-align: center;
+      border-bottom: 2px solid var(--gold);
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+
+    .cert-org {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--blue);
+      margin-bottom: 6px;
+    }
+
+    .cert-greek {
+      font-size: 3rem;
+      color: var(--gold);
+      line-height: 1;
+      margin: 8px 0;
+    }
+
+    .cert-title {
+      font-size: 1.6rem;
+      color: var(--blue);
+      letter-spacing: 0.04em;
+      margin: 12px 0 4px;
+    }
+
+    .cert-subtitle {
+      font-size: 0.9rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    .cert-body {
+      margin: 24px 0;
+    }
+
+    .cert-intro {
+      font-size: 0.95rem;
+      color: #333;
+      line-height: 1.7;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .cert-intro strong {
+      color: var(--blue);
+      font-size: 1.1rem;
+    }
+
+    /* Lineage timeline */
+    .lineage-chain {
+      position: relative;
+      padding-left: 28px;
+      margin: 24px 0;
+    }
+
+    .lineage-chain::before {
+      content: '';
+      position: absolute;
+      left: 11px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--gold);
+    }
+
+    .lineage-node {
+      position: relative;
+      margin-bottom: 20px;
+      padding-left: 20px;
+    }
+
+    .lineage-node::before {
+      content: '';
+      position: absolute;
+      left: -17px;
+      top: 10px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--gold);
+      border: 2px solid var(--blue);
+    }
+
+    .lineage-node.root-node::before {
+      width: 16px;
+      height: 16px;
+      left: -19px;
+      top: 8px;
+      background: var(--blue);
+      border-color: var(--gold);
+    }
+
+    .node-name {
+      font-size: 1.05rem;
+      font-weight: bold;
+      color: var(--blue);
+    }
+
+    .node-details {
+      font-size: 0.82rem;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .node-source {
+      font-size: 0.72rem;
+      color: #888;
+      margin-top: 3px;
+      font-style: italic;
+    }
+
+    .node-tier {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 0.68rem;
+      font-weight: bold;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .tier-3-cert { background: #e8f5e9; color: #1a6e3a; border: 1px solid #a5d6a7; }
+    .tier-2-cert { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+    .tier-1-cert { background: #fff3e0; color: #e65100; border: 1px solid #ffcc02; }
+    .verified-cert { background: #f3e5f5; color: #6a1b9a; border: 1px solid #ce93d8; }
+
+    /* Enslaver section */
+    .enslaver-section {
+      background: #fff8e1;
+      border: 1px solid #f9a825;
+      border-left: 4px solid #f9a825;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin: 24px 0;
+    }
+
+    .enslaver-section h4 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #7b5800;
+      margin-bottom: 8px;
+    }
+
+    .enslaver-name {
+      font-size: 1rem;
+      font-weight: bold;
+      color: #4a3000;
+    }
+
+    .enslaver-details {
+      font-size: 0.82rem;
+      color: #5a4000;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .enslaver-evidence {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 8px;
+      font-style: italic;
+    }
+
+    /* Seal area */
+    .cert-seal {
+      text-align: center;
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--gold);
+    }
+
+    .cert-seal-symbol {
+      font-size: 3rem;
+      color: var(--gold);
+    }
+
+    .cert-date {
+      font-size: 0.82rem;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .cert-cert-num {
+      font-size: 0.68rem;
+      color: #aaa;
+      margin-top: 4px;
+      letter-spacing: 0.08em;
+    }
+
+    /* Evidence table */
+    .evidence-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 12px;
+    }
+
+    .evidence-table th {
+      background: var(--blue);
+      color: white;
+      padding: 6px 10px;
+      text-align: left;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .evidence-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #eee;
+      vertical-align: top;
+    }
+
+    .evidence-table tr:hover td { background: #fafafa; }
+
+    .print-btn {
+      background: var(--blue);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 28px;
+      font-size: 0.95rem;
+      font-family: Georgia, serif;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+
+    .print-btn:hover { background: var(--blue2); }
+  </style>
+</head>
+<body style="background:#f4f4f4; padding: 20px 0;">
+
+<div style="max-width:800px; margin:0 auto 20px; padding:0 20px;" class="no-print">
+  <a href="/" class="back-link">← Back to Search</a>
+  <a href="/members" class="back-link" style="margin-left:12px;">Verified Members</a>
+  <button class="print-btn" onclick="window.print()" style="float:right;">
+    Print / Save PDF
+  </button>
+</div>
+
+<div class="cert-page">
+  <div class="cert-border">
+
+    <!-- Header -->
+    <div class="cert-header">
+      <div class="cert-org">Phi Beta Alpha Historical Lineage Society, Inc.</div>
+      <div class="cert-greek">ΦΒΑ</div>
+      <div class="cert-title">Certificate of Foundational Black American Lineage</div>
+      <div class="cert-subtitle">
+        "You don't join it, you were born it." &nbsp;·&nbsp; EIN 41-4969999
+      </div>
+    </div>
+
+    <!-- Intro -->
+    <div class="cert-intro">
+      This certifies that the lineage of<br>
+      <strong>{{ member.first_name }} {{ member.last_name }}</strong><br>
+      has been verified through documentary evidence to include<br>
+      direct descent from Foundational Black Americans<br>
+      documented in the <em>1870 United States Federal Census</em>
+      and the <em>Freedmen's Bureau records</em>.
+    </div>
+
+    <!-- Lineage chain -->
+    <h3 style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--blue); margin-bottom:16px;">
+      Verified Lineage Chain
+    </h3>
+
+    <div class="lineage-chain">
+      {% for anc in ancestors %}
+      <div class="lineage-node {% if loop.first %}root-node{% endif %}">
+        <div class="node-name">
+          {{ anc.first_name }} {{ anc.last_name }}
+          {% if anc.ipums_tier %}
+          <span class="node-tier {% if 'Tier-3' in anc.ipums_tier %}tier-3-cert{% elif 'Tier-2' in anc.ipums_tier %}tier-2-cert{% elif 'Tier-1' in anc.ipums_tier %}tier-1-cert{% else %}verified-cert{% endif %}">
+            {{ anc.ipums_tier }}
+          </span>
+          {% elif anc.verified %}
+          <span class="node-tier verified-cert">Verified</span>
+          {% endif %}
+        </div>
+        <div class="node-details">
+          Born ~{{ anc.birth_year or '?' }}
+          {% if anc.birth_county %} · {{ anc.birth_county }} County, {{ anc.birth_state }}{% elif anc.birth_state %} · {{ anc.birth_state }}{% endif %}
+          &nbsp;·&nbsp; <em>{{ anc.relationship }}</em>
+        </div>
+        {% if anc.notes %}
+        <div class="node-source">{{ anc.notes[:200] }}{% if anc.notes|length > 200 %}…{% endif %}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% if member %}
+      <div class="lineage-node">
+        <div class="node-name" style="color: #333;">
+          {{ member.first_name }} {{ member.last_name }}
+          <span class="node-tier verified-cert">Member</span>
+        </div>
+        <div class="node-details">
+          Born ~{{ member.birth_year or '?' }}
+          {% if member.birth_county %} · {{ member.birth_county }} County, {{ member.birth_state }}{% elif member.birth_state %} · {{ member.birth_state }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Enslaver identification -->
+    {% if enslaver %}
+    <div class="enslaver-section">
+      <h4>Historical Enslavement Record</h4>
+      <div class="enslaver-name">
+        {% if enslaver.probable %}Probable enslaver: {% endif %}{{ enslaver.name }}
+        ({{ enslaver.birth_year or '?' }}–{{ enslaver.death_year or '?' }})
+      </div>
+      <div class="enslaver-details">
+        {{ enslaver.county }} County, {{ enslaver.state }}
+        &nbsp;·&nbsp; {{ enslaver.enslaved_count }} enslaved persons ({{ enslaver.source_year }} slave schedule)
+        {% if enslaver.notes %}<br>{{ enslaver.notes }}{% endif %}
+      </div>
+      <div class="enslaver-evidence">
+        Evidence basis: {{ enslaver.evidence }}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Evidence summary -->
+    {% if evidence_records %}
+    <h3 style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--blue); margin-bottom:12px;">
+      Documentary Evidence
+    </h3>
+    <table class="evidence-table">
+      <thead>
+        <tr>
+          <th>Source</th><th>Year</th><th>Person</th><th>Location</th><th>Archive</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in evidence_records %}
+        <tr>
+          <td>{{ ev.source }}</td>
+          <td>{{ ev.year }}</td>
+          <td>{{ ev.person }}</td>
+          <td>{{ ev.location }}</td>
+          <td style="font-size:0.68rem; color:#888;">{{ ev.citation }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Seal -->
+    <div class="cert-seal">
+      <div class="cert-seal-symbol">⚖</div>
+      <div style="color: var(--blue); font-weight:bold; font-size:0.85rem; margin-top:8px;">
+        Phi Beta Alpha Historical Lineage Society, Inc.
+      </div>
+      <div class="cert-date">Certificate generated: {{ today }}</div>
+      <div class="cert-cert-num">
+        Certificate No. {{ cert_id }} &nbsp;·&nbsp;
+        phibetaalpha.org &nbsp;·&nbsp; EIN 41-4969999
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

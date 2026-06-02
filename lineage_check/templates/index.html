@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Ancestor Lineage Search{% endblock %}
+
+{% block stats_bar %}
+{% if stats %}
+<div class="stats-bar">
+  <div class="stats-bar-inner">
+    <div class="stat-item">
+      <span class="stat-num">{{ "{:,}".format(stats.ipums_total) }}</span>
+      <span class="stat-label">1870 Census Records</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num">{{ "{:,}".format(stats.total_named) }}</span>
+      <span class="stat-label">Named OCR Records</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num">{{ "{:,}".format(stats.total_black) }}</span>
+      <span class="stat-label">Black Records Named</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num">{{ "{:,}".format(stats.bureau_total) }}</span>
+      <span class="stat-label">Freedmen's Bureau Records</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num">{{ stats.state_count }}</span>
+      <span class="stat-label">States with OCR Data</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="search-card">
+    <h2>Ancestor Lineage Search</h2>
+    <p class="subtitle">
+      Enter your oldest known ancestor's name to search the 1870 U.S. Federal Census
+      and verify your Foundational Black American lineage.
+    </p>
+
+    <form action="/search" method="POST">
+      <div class="form-grid">
+
+        {% if error %}
+        <div class="error-msg full">{{ error }}</div>
+        {% endif %}
+
+        <div class="form-group">
+          <label for="last_name">Last Name *</label>
+          <input type="text" id="last_name" name="last_name"
+                 placeholder="e.g. Bacon" required autofocus>
+        </div>
+
+        <div class="form-group">
+          <label for="first_name">First Name</label>
+          <input type="text" id="first_name" name="first_name"
+                 placeholder="e.g. Washington">
+        </div>
+
+        <div class="form-group">
+          <label for="birth_year">Estimated Birth Year</label>
+          <input type="number" id="birth_year" name="birth_year"
+                 placeholder="e.g. 1835" min="1780" max="1865">
+          <span class="hint">We search &#177;15 years around this date</span>
+        </div>
+
+        <div class="form-group">
+          <label for="state">State</label>
+          <select id="state" name="state" onchange="updateCountyVisibility(this.value)">
+            {% for s in states %}
+            <option value="{{ s }}" {% if s == "Georgia" %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group" id="county-group">
+          <label for="county">County <span id="county-hint" style="font-weight:normal;text-transform:none;color:#888;">(Georgia)</span></label>
+          <select id="county-select" name="county">
+            <option value="">&#8212; Any county &#8212;</option>
+            {% for county in counties %}
+            <option value="{{ county }}">{{ county }} County</option>
+            {% endfor %}
+          </select>
+          <input type="text" id="county-text" name="county_text"
+                 placeholder="County name (optional)"
+                 style="display:none;">
+        </div>
+
+        <input type="hidden" name="window" value="15">
+
+        <button type="submit" class="btn-search">
+          Search the <span class="gold-text">1870 Census</span>
+        </button>
+
+      </div>
+    </form>
+  </div>
+
+  <div class="about-section">
+    <div class="about-card">
+      <h3>What is Lineage Check?</h3>
+      <p>
+        Lineage Check searches digitized 1870 U.S. Federal Census records to
+        verify your direct descent from Foundational Black Americans —
+        descendants of American chattel slavery.
+      </p>
+    </div>
+    <div class="about-card">
+      <h3>How it works</h3>
+      <p>
+        We match your ancestor's name against handwritten census records using
+        phonetic matching and cross-reference against {{ "{:,}".format(stats.ipums_total) if stats else "3.4 million" }}
+        verified demographic records to produce a confidence-scored lineage chain.
+      </p>
+    </div>
+    <div class="about-card">
+      <h3>Your data rights</h3>
+      <p>
+        &#934;&#914;&#913; owns this dataset. Your verified lineage belongs to you &mdash;
+        not a corporation, not a foreign database. Used to document
+        constitutional lineage rights and support reparations eligibility.
+      </p>
+    </div>
+  </div>
+
+  {% if stats and stats.states_covered %}
+  <div class="coverage-section">
+    <h3>Database Coverage</h3>
+    <div class="coverage-grid">
+      {% set all_states = ["Georgia","Alabama","Florida","South Carolina","North Carolina","Mississippi","Kentucky","Louisiana","Virginia","New York"] %}
+      {% for s in all_states %}
+      <div class="coverage-item {% if s in stats.states_covered %}covered{% else %}pending{% endif %}">
+        <span class="coverage-dot"></span>
+        <span class="coverage-name">{{ s }}</span>
+        {% if s in stats.states_covered %}
+        <span class="coverage-status">Active</span>
+        {% elif pipeline_active and pipeline_active.state == s %}
+        <span class="coverage-status" style="color:#4caf50;">Indexing</span>
+        {% else %}
+        <span class="coverage-status pending-text">Pending</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateCountyVisibility(state) {
+  var hint = document.getElementById('county-hint');
+  var sel  = document.getElementById('county-select');
+  var txt  = document.getElementById('county-text');
+  if (state === 'Georgia') {
+    hint.textContent = '(Georgia)';
+    sel.style.display = '';
+    txt.style.display = 'none';
+    sel.name = 'county';
+    txt.name = 'county_text_unused';
+  } else if (state === 'All States') {
+    hint.textContent = '';
+    sel.style.display = 'none';
+    txt.style.display = 'none';
+    sel.name = 'county_unused';
+    txt.name = 'county_unused';
+  } else {
+    hint.textContent = '(' + state + ')';
+    sel.style.display = 'none';
+    txt.style.display = '';
+    sel.name = 'county_select_unused';
+    txt.name = 'county';
+  }
+}
+updateCountyVisibility(document.getElementById('state').value);
+</script>
+{% endblock %}

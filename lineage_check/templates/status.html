@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Pipeline Status{% endblock %}
+
+{% block content %}
+  <div class="results-header" style="margin-top:20px;">
+    <h2>OCR Pipeline Status</h2>
+    <p class="query-summary" id="status-updated">
+      NARA M593 microfilm indexing &mdash; 1870 Population Schedules
+    </p>
+  </div>
+
+  <!-- Georgia (complete) -->
+  <div class="result-card" style="margin-bottom:16px; border-left:4px solid var(--green);">
+    <div class="result-header">
+      <div>
+        <div class="result-name">Georgia</div>
+        <div class="result-county">Full OCR Coverage &middot; Liberty, McIntosh, Chatham, Bartow, and 20+ counties</div>
+      </div>
+      <span class="tier-badge tier-3">Complete</span>
+    </div>
+    <div class="result-body">
+      <div style="display:flex; gap:32px; flex-wrap:wrap; margin-top:8px; align-items:flex-end;">
+        <div>
+          <span class="big-stat-num">{{ "{:,}".format(ga_count) }}</span>
+          <span class="big-stat-label">Named OCR Records</span>
+        </div>
+        <div>
+          <span class="big-stat-num" style="color:var(--green);">{{ "{:,}".format(ga_black) }}</span>
+          <span class="big-stat-label">Black Americans</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live pipeline progress -->
+  <h3 class="section-divider">Active Pipeline &mdash; Multi-State Reels</h3>
+
+  <div id="pipeline-progress-container">
+    {% for s in state_status %}
+    <div class="result-card reel-state-card" style="margin-bottom:12px;
+         {% if s.has_ocr %}border-left:4px solid var(--green);
+         {% elif s.is_active %}border-left:4px solid #4caf50;
+         {% else %}border-left:4px solid #ccc;{% endif %}">
+      <div class="result-header">
+        <div>
+          <div class="result-name">
+            {{ s.state }}
+            {% if s.is_active %}
+            <span style="width:8px;height:8px;border-radius:50%;background:#4caf50;display:inline-block;margin-left:8px;animation:pulse-green 1.5s infinite;"></span>
+            {% endif %}
+          </div>
+          <div class="result-county">
+            {% if s.total_records > 0 %}
+              {{ "{:,}".format(s.total_records) }} records indexed &middot; {{ "{:,}".format(s.black_records) }} Black
+            {% else %}
+              IPUMS demographic data available &middot; Named records pending OCR
+            {% endif %}
+          </div>
+        </div>
+        {% if s.has_ocr %}
+          <span class="tier-badge tier-2">Active</span>
+        {% elif s.is_active %}
+          <span class="tier-badge" style="background:#e8f5e9;color:#1a6e3a;border:1px solid #a5d6a7;">Indexing</span>
+        {% else %}
+          <span class="tier-badge tier-0">Queued</span>
+        {% endif %}
+      </div>
+
+      <div class="result-body reel-body">
+        {% for reel in s.reels %}
+        <div class="reel-row" data-reel="{{ reel.reel }}">
+          <div class="reel-header-row">
+            <span class="reel-label">Reel {{ reel.reel }} &mdash; {{ reel.county }}</span>
+            <span class="reel-records">
+              {% if reel.records > 0 %}{{ "{:,}".format(reel.records) }} records{% endif %}
+              {% if reel.pages_done > 0 %}&middot; {{ reel.pages_done }}/{{ reel.pages_total or '?' }} pages{% endif %}
+            </span>
+            <span class="reel-status-tag
+              {% if reel.status == 'complete' %}reel-complete
+              {% elif reel.status == 'active' %}reel-active
+              {% elif reel.status == 'downloaded' %}reel-ready
+              {% else %}reel-pending{% endif %}">
+              {% if reel.status == 'complete' %}&#10003; Done
+              {% elif reel.status == 'active' %}&#9654; Running
+              {% elif reel.status == 'downloaded' %}Ready
+              {% else %}Not downloaded{% endif %}
+            </span>
+          </div>
+          {% if reel.pages_total and reel.pages_total > 0 %}
+          <div class="reel-progress-bar">
+            <div class="reel-progress-fill {% if reel.status == 'active' %}active{% endif %}"
+                 style="width: {{ reel.pct }}%"></div>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Summary totals -->
+  <div class="result-card" style="margin-top:24px; border-left:4px solid var(--gold);">
+    <div class="result-header">
+      <div>
+        <div class="result-name">Total Database Coverage</div>
+        <div class="result-county" id="db-summary">
+          {{ "{:,}".format(total_multi_records) }} multi-state records indexed &middot;
+          {{ "{:,}".format(total_multi_black) }} Black Americans &middot;
+          {{ states_with_data }} states with named data
+        </div>
+      </div>
+      <span class="tier-badge tier-3">{{ "{:,}".format(ga_count + total_multi_records) }} total</span>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh pipeline progress every 20 seconds
+function refreshProgress() {
+  fetch('/api/pipeline-progress')
+    .then(r => r.json())
+    .then(data => {
+      var ts = new Date().toLocaleTimeString();
+      var el = document.getElementById('status-updated');
+      if (el) el.textContent = 'Last updated: ' + ts;
+
+      data.forEach(function(reel) {
+        var row = document.querySelector('[data-reel="' + reel.reel + '"]');
+        if (!row) return;
+        var fill = row.querySelector('.reel-progress-fill');
+        var recEl = row.querySelector('.reel-records');
+        if (fill) {
+          fill.style.width = reel.pct + '%';
+          if (reel.pct < 100) fill.classList.add('active');
+          else fill.classList.remove('active');
+        }
+        if (recEl && reel.records > 0) {
+          recEl.textContent = reel.records.toLocaleString() + ' records · ' +
+            reel.success + '/' + reel.total_pages + ' pages';
+        }
+      });
+    })
+    .catch(function() {});
+}
+
+setInterval(refreshProgress, 20000);
+</script>
+{% endblock %}

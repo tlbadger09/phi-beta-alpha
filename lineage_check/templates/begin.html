@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Begin Verification{% endblock %}
+
+{% block content %}
+  <a href="/" class="back-link">&#8592; Back to Search</a>
+
+  {% if submitted %}
+
+  <div class="result-card" style="margin-top:24px; border-left:4px solid var(--green); max-width:640px; margin-left:auto; margin-right:auto;">
+    <div class="result-header">
+      <div>
+        <div class="result-name">Submission Received</div>
+        <div class="result-county">Reference: {{ submission_id }}</div>
+      </div>
+      <span class="tier-badge tier-2">Pending Review</span>
+    </div>
+    <div class="result-body" style="margin-top:12px;">
+      <p style="font-size:0.9rem; color:#333; line-height:1.7;">
+        Your lineage verification request for <strong>{{ anc_name }}</strong> has been submitted.
+      </p>
+      <p style="font-size:0.85rem; color:#555; margin-top:12px; line-height:1.6;">
+        The &#934;&#914;&#913; research team will review your submission and cross-reference the census
+        record against our verified database. You will be notified when verification
+        is complete and your lineage chain is ready.
+      </p>
+      <p style="font-size:0.8rem; color:#888; margin-top:12px;">
+        Save your reference number: <strong>{{ submission_id }}</strong>
+      </p>
+      <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
+        <a href="/" class="btn-primary">Search Again</a>
+        <a href="/members" class="btn-gold">View Verified Members</a>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+
+  <div class="results-header" style="margin-top:20px;">
+    <h2>Begin Lineage Verification</h2>
+    <p class="query-summary">
+      Found your ancestor in the 1870 Census? Submit their record to begin your
+      verified FBA lineage chain.
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="error-msg" style="margin-bottom:16px;">{{ error }}</div>
+  {% endif %}
+
+  <div class="search-card" style="max-width:700px;">
+    <form action="/begin" method="POST">
+
+      <h3 style="margin-bottom:16px; color:var(--blue); border-bottom:2px solid var(--gold); padding-bottom:8px;">
+        Your Information
+      </h3>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="member_name">Your Full Name *</label>
+          <input type="text" id="member_name" name="member_name"
+                 placeholder="e.g. Tracy Badger" required>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="member_email">Email Address (optional &mdash; for status updates)</label>
+          <input type="email" id="member_email" name="member_email"
+                 placeholder="your@email.com">
+        </div>
+      </div>
+
+      <h3 style="margin:24px 0 16px; color:var(--blue); border-bottom:2px solid var(--gold); padding-bottom:8px;">
+        Your Ancestor (1870 Census)
+      </h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="anc_first">Ancestor First Name *</label>
+          <input type="text" id="anc_first" name="anc_first"
+                 value="{{ prefill.anc_first if prefill else '' }}"
+                 placeholder="e.g. Washington" required>
+        </div>
+        <div class="form-group">
+          <label for="anc_last">Ancestor Last Name *</label>
+          <input type="text" id="anc_last" name="anc_last"
+                 value="{{ prefill.anc_last if prefill else '' }}"
+                 placeholder="e.g. Bacon" required>
+        </div>
+        <div class="form-group">
+          <label for="anc_year">Estimated Birth Year</label>
+          <input type="number" id="anc_year" name="anc_year"
+                 value="{{ prefill.anc_year if prefill else '' }}"
+                 placeholder="e.g. 1828" min="1770" max="1865">
+        </div>
+        <div class="form-group">
+          <label for="anc_state">State (1870)</label>
+          <select id="anc_state" name="anc_state">
+            {% for s in states %}
+            <option value="{{ s }}"
+              {% if prefill and s == prefill.anc_state %}selected
+              {% elif not prefill and s == "Georgia" %}selected
+              {% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="anc_county">County (1870)</label>
+          <input type="text" id="anc_county" name="anc_county"
+                 value="{{ prefill.anc_county if prefill else '' }}"
+                 placeholder="e.g. McIntosh">
+        </div>
+      </div>
+
+      <h3 style="margin:24px 0 16px; color:var(--blue); border-bottom:2px solid var(--gold); padding-bottom:8px;">
+        Source Record <span style="font-weight:normal;text-transform:none;color:#888;">(optional &mdash; paste from Search results)</span>
+      </h3>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="ocr_id">OCR Record ID or FamilySearch ARK</label>
+          <input type="text" id="ocr_id" name="ocr_id"
+                 value="{{ prefill.ipums_histid if prefill else '' }}"
+                 placeholder="e.g. OCR-1A09D86215AD or ark:/61903/3:1:&hellip;">
+          <span class="hint">Found in search results under Source / HISTID</span>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="ipums_histid">IPUMS HISTID (if shown in results)</label>
+          <input type="text" id="ipums_histid" name="ipums_histid"
+                 value="{{ prefill.ipums_histid if prefill else '' }}"
+                 placeholder="e.g. A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="notes">Additional Notes / Documents You Have</label>
+          <textarea id="notes" name="notes" rows="4"
+                    placeholder="e.g. I have a 1930 census showing my grandfather in McIntosh County, a death certificate, or a family bible&hellip;"
+                    style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; font-family:inherit; resize:vertical;"></textarea>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-search" style="margin-top:16px;">
+        Submit Verification Request
+      </button>
+
+    </form>
+  </div>
+
+  {% endif %}
+{% endblock %}

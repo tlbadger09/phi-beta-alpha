@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+{% block title %}Search Results{% endblock %}
+
+{% block content %}
+  <a href="/" class="back-link">&#8592; New Search</a>
+
+  <div class="results-header">
+    <h2>Lineage Search Results</h2>
+    <p class="query-summary">
+      Searching for: <strong>{{ query.first_name }} {{ query.last_name }}</strong>
+      {% if query.birth_year %} &middot; Born ~{{ query.birth_year }}{% endif %}
+      {% if query.county %} &middot; {{ query.county }} County{% endif %}
+      &middot; <strong>{{ query.state or "Georgia" }}</strong>
+      &nbsp;&middot;&nbsp; {{ results|length }} match{{ 'es' if results|length != 1 else '' }} found
+    </p>
+  </div>
+
+  {% if not results %}
+
+  {% if pipeline_active and (pipeline_active.state == query.state or query.state == 'All States') %}
+  <div class="pipeline-indexing-notice">
+    <div class="pin-icon">&#9654;</div>
+    <div>
+      <strong>Pipeline is actively indexing {{ pipeline_active.state }} right now</strong><br>
+      <span>{{ "{:,}".format(pipeline_active.records) }} records indexed so far &mdash; {{ pipeline_active.pct }}% complete.
+      Try again in a few minutes as new records are added continuously.</span>
+    </div>
+    <a href="/status" class="pin-link">Live progress</a>
+  </div>
+  {% endif %}
+
+  {% if no_ocr_stub %}
+  <div class="demographic-stub">
+    <div class="stub-icon">&#128202;</div>
+    <h3>No Named Records Found &mdash; But IPUMS Confirms This Ancestor Type Existed</h3>
+    <p>
+      The IPUMS 1870 demographic database confirms:
+    </p>
+    <div class="stub-stats">
+      <div class="stub-stat">
+        <span class="stub-num">{{ "{:,}".format(no_ocr_stub.black_in_period) }}</span>
+        <span class="stub-label">Black Americans in {{ query.state }} born
+          {% if query.birth_year %}~{{ query.birth_year|int - 15 }}&ndash;{{ query.birth_year|int + 15 }}{% else %}in the right era{% endif %}
+        </span>
+      </div>
+      <div class="stub-stat">
+        <span class="stub-num">{{ "{:,}".format(no_ocr_stub.total_in_period) }}</span>
+        <span class="stub-label">Total persons in this demographic window</span>
+      </div>
+    </div>
+    <p class="stub-note">
+      Your ancestor's demographic profile matches {{ "{:,}".format(no_ocr_stub.black_in_period) }} Black Americans in {{ query.state }} in 1870.
+      The named record may be indexed under a spelling variant or in a county not yet covered.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="no-results">
+    <h3>No named records found for <em>{{ query.first_name }} {{ query.last_name }}</em> in {{ query.state }}</h3>
+    <p>The record may not be indexed yet, OCR'd under a variant spelling, or from a county still pending.</p>
+    <div class="try-these">
+      <p class="try-label">Try these searches:</p>
+      <div class="try-grid">
+        {% if query.birth_year %}
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="first_name" value="{{ query.first_name }}">
+          <input type="hidden" name="state"      value="{{ query.state }}">
+          <input type="hidden" name="window"     value="25">
+          <button type="submit" class="try-btn">&#128269; Widen to &#177;25 year window</button>
+        </form>
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="first_name" value="{{ query.first_name }}">
+          <input type="hidden" name="state"      value="{{ query.state }}">
+          <input type="hidden" name="window"     value="15">
+          <button type="submit" class="try-btn">&#128197; Remove birth year filter</button>
+        </form>
+        {% endif %}
+        {% if query.county %}
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="first_name" value="{{ query.first_name }}">
+          <input type="hidden" name="birth_year" value="{{ query.birth_year }}">
+          <input type="hidden" name="state"      value="{{ query.state }}">
+          <input type="hidden" name="window"     value="15">
+          <button type="submit" class="try-btn">&#128205; Remove county filter</button>
+        </form>
+        {% endif %}
+        {% if query.first_name %}
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="birth_year" value="{{ query.birth_year }}">
+          <input type="hidden" name="state"      value="{{ query.state }}">
+          <input type="hidden" name="window"     value="15">
+          <button type="submit" class="try-btn">&#128100; Last name only</button>
+        </form>
+        {% endif %}
+        {% if query.state != 'All States' %}
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="first_name" value="{{ query.first_name }}">
+          <input type="hidden" name="birth_year" value="{{ query.birth_year }}">
+          <input type="hidden" name="state"      value="All States">
+          <input type="hidden" name="window"     value="15">
+          <button type="submit" class="try-btn">&#127758; Search all states</button>
+        </form>
+        {% endif %}
+        {% if query.state != 'Georgia' %}
+        <form action="/search" method="POST" class="try-form">
+          <input type="hidden" name="last_name"  value="{{ query.last_name }}">
+          <input type="hidden" name="first_name" value="{{ query.first_name }}">
+          <input type="hidden" name="birth_year" value="{{ query.birth_year }}">
+          <input type="hidden" name="state"      value="Georgia">
+          <input type="hidden" name="window"     value="15">
+          <button type="submit" class="try-btn">&#127987; Try Georgia (best coverage)</button>
+        </form>
+        {% endif %}
+      </div>
+      <p class="try-note">
+        Full OCR coverage active for <strong>Georgia</strong>.
+        Other states indexing now &mdash; <a href="/status">check pipeline status</a>.
+      </p>
+    </div>
+  </div>
+
+  {% else %}
+
+  {% for r in results %}
+  {% set m = r.match %}
+  {% set conf = r.confidence %}
+  {% set tier = r.tier %}
+  {% set is_bureau = m.source_table == 'bureau_patients' %}
+
+  <div class="result-card {% if is_bureau %}bureau-card{% endif %}{% if m.near_miss %} near-miss-card{% endif %}">
+    <div class="result-header">
+      <div>
+        <div class="result-name">
+          {% if m.first_name %}{{ m.first_name }} {% endif %}{{ m.last_name }}
+          {% if m.near_miss %}<span class="near-miss-badge" title="Spelling variant — OCR may have misread the original handwriting">~ possible spelling variant</span>{% endif %}
+        </div>
+        <div class="result-county">
+          {% if is_bureau %}
+            <span class="bureau-badge">&#128203; Freedmen's Bureau</span>
+            {{ m.county }} County, Georgia &nbsp;&middot;&nbsp;
+            U.S. Dispensary, Darien &nbsp;&middot;&nbsp; 1865&ndash;1868
+            {% if m.condition %} &nbsp;&middot;&nbsp; {{ m.condition }}{% endif %}
+          {% else %}
+            {{ m.county }} County, {{ m.state }} &nbsp;&middot;&nbsp;
+            1870 U.S. Federal Census &nbsp;&middot;&nbsp;
+            Dwelling {{ m.dwelling }}
+            {% if m.occupation %} &nbsp;&middot;&nbsp; {{ m.occupation }}{% endif %}
+          {% endif %}
+        </div>
+      </div>
+      <div class="confidence-badge">
+        <div class="conf-bar-wrap">
+          <div class="conf-bar {% if conf >= 70 %}conf-high{% elif conf >= 45 %}conf-med{% else %}conf-low{% endif %}"
+               style="width: {{ conf }}%"></div>
+        </div>
+        <span class="conf-pct">{{ conf }}%
+          <span class="conf-help" tabindex="0">?
+            <span class="conf-tooltip-body">
+              <strong>Confidence score breakdown</strong><br>
+              Name match: up to 50 pts<br>
+              Census links (Tier): Tier 3 +50, Tier 2 +35, Tier 1 +15<br>
+              Black record confirmed: +8 pts<br>
+              <em>70%+ = strong match &nbsp; 45–69% = possible &nbsp; &lt;45% = weak</em>
+            </span>
+          </span>
+        </span>
+        <span class="tier-badge tier-{{ tier }}">
+          {% if is_bureau %}Bureau{% elif tier == 3 %}Tier 3{% elif tier == 2 %}Tier 2{% elif tier == 1 %}Tier 1{% else %}Unverified{% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="result-body">
+      <div class="result-grid">
+
+        <div class="field-group">
+          {% if is_bureau %}
+          <div class="section-title">Freedmen's Bureau &mdash; Patient Register</div>
+          <div class="field">
+            <span class="field-label">Full Name</span>
+            <span class="field-value highlight">{{ m.full_name }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Age</span>
+            <span class="field-value">
+              {{ m.age or '&mdash;' }}
+              {% if m.birth_year %} (born ~{{ m.birth_year }}){% endif %}
+            </span>
+          </div>
+          <div class="field">
+            <span class="field-label">Medical Condition</span>
+            <span class="field-value">{{ m.condition or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Date</span>
+            <span class="field-value">{{ m.date_entry or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Location / Plantation</span>
+            <span class="field-value">{{ m.location or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">County</span>
+            <span class="field-value">{{ m.county }} County, Georgia</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Source</span>
+            <span class="field-value source-cite">
+              NARA M1903 Roll 61 &middot; Darien Dispensary &middot; Page {{ m.page }}
+            </span>
+          </div>
+          {% else %}
+          <div class="section-title">Census Record</div>
+          <div class="field">
+            <span class="field-label">Full Name</span>
+            <span class="field-value highlight">{% if m.first_name %}{{ m.first_name }} {% endif %}{{ m.last_name }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Age in 1870</span>
+            <span class="field-value">
+              {{ m.age }}
+              {% if m.birth_year %} (born ~{{ m.birth_year }}){% endif %}
+            </span>
+          </div>
+          <div class="field">
+            <span class="field-label">Sex</span>
+            <span class="field-value">{{ m.sex or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Race (1870 Census)</span>
+            <span class="field-value">{{ m.race or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Birthplace</span>
+            <span class="field-value">{{ m.birthplace or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Occupation</span>
+            <span class="field-value">{{ m.occupation or '&mdash;' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Location</span>
+            <span class="field-value">{{ m.county }} County, {{ m.state }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Source</span>
+            <span class="field-value source-cite">
+              {% if m.image_file %}{{ m.image_file }}{% else %}1870 U.S. Federal Census{% endif %}
+            </span>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="field-group">
+          {% if r.household and not is_bureau %}
+          <div class="section-title">Household Members (Dwelling {{ m.dwelling }})</div>
+          <table class="household-table">
+            <thead>
+              <tr>
+                <th>Name</th><th>Age</th><th>Sex</th><th>Race</th><th>Occupation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for member in r.household %}
+              <tr {% if member.name|lower == (m.first_name ~ ' ' ~ m.last_name)|lower %}class="is-match"{% endif %}>
+                <td><strong>{{ member.name }}</strong></td>
+                <td>{{ member.age or '&mdash;' }}</td>
+                <td>{{ member.sex or '&mdash;' }}</td>
+                <td>{{ member.race or '&mdash;' }}</td>
+                <td>{{ member.occupation or '&mdash;' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          {% if is_bureau %}
+          <div class="bureau-context">
+            <div class="section-title">What This Record Means</div>
+            <p style="font-size:0.85rem; color:#444; line-height:1.5;">
+              This person sought medical care at the <strong>U.S. Freedmen's Bureau Dispensary in Darien, Georgia</strong>
+              between 1865 and 1868 &mdash; within the first three years after emancipation.
+              This places your ancestor in <strong>McIntosh County, Georgia</strong> during Reconstruction,
+              corroborating 1870 census research in the same area.
+            </p>
+            <p style="font-size:0.85rem; color:#999; margin-top:8px;">
+              Source: NARA Microcopy M1903, Roll 61 (Georgia Freedmen's Bureau Field Office Records)
+            </p>
+          </div>
+          {% endif %}
+
+          {% if r.ipums %}
+          <div class="ipums-section">
+            <h4>IPUMS Demographic Verification</h4>
+            <div class="field">
+              <span class="field-label">Verification Status</span>
+              <span class="field-value">
+                <span class="tier-badge tier-{{ r.ipums.tier }}">{{ r.ipums.tier_label }}</span>
+              </span>
+            </div>
+            <div class="field" style="margin-top:8px;">
+              <span class="field-label">Birthplace (IPUMS)</span>
+              <span class="field-value">{{ r.ipums.bpl_label }}</span>
+            </div>
+            <div class="field" style="margin-top:8px;">
+              <span class="field-label">HISTID</span>
+              <span class="field-value source-cite">{{ r.ipums.histid }}</span>
+            </div>
+            <div class="ipums-links">
+              <span class="census-link">1870 &#10003;</span>
+              <span class="census-link {% if not r.ipums.link1880 %}inactive{% endif %}">1880 {% if r.ipums.link1880 %}&#10003;{% else %}&mdash;{% endif %}</span>
+              <span class="census-link {% if not r.ipums.link1900 %}inactive{% endif %}">1900 {% if r.ipums.link1900 %}&#10003;{% else %}&mdash;{% endif %}</span>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if not is_bureau %}
+          <div class="research-links" style="margin-top:12px;">
+            <div class="section-title">Search External Records</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+              <a href="https://www.familysearch.org/search/record/results?q.givenName={{ m.first_name|urlencode }}&q.surname={{ m.last_name|urlencode }}{% if m.birth_year %}&q.birthLikeYear={{ m.birth_year }}&q.birthLikeYearEnd=5{% endif %}&q.residencePlace={{ m.state|urlencode }}&f.collectionId=1473181"
+                 target="_blank" rel="noopener" class="ext-link fs-link">
+                FamilySearch 1870
+              </a>
+              <a href="https://www.familysearch.org/search/record/results?q.givenName={{ m.first_name|urlencode }}&q.surname={{ m.last_name|urlencode }}{% if m.birth_year %}&q.birthLikeYear={{ m.birth_year }}&q.birthLikeYearEnd=5{% endif %}&q.residencePlace={{ m.state|urlencode }}&f.collectionId=1417539"
+                 target="_blank" rel="noopener" class="ext-link fs-link">
+                FamilySearch 1880
+              </a>
+              <a href="https://www.familysearch.org/search/record/results?q.givenName={{ m.first_name|urlencode }}&q.surname={{ m.last_name|urlencode }}{% if m.birth_year %}&q.birthLikeYear={{ m.birth_year }}&q.birthLikeYearEnd=5{% endif %}&q.residencePlace={{ m.state|urlencode }}&f.collectionId=1030530"
+                 target="_blank" rel="noopener" class="ext-link fs-link">
+                FamilySearch 1900
+              </a>
+              <a href="https://www.familysearch.org/search/record/results?q.givenName={{ m.first_name|urlencode }}&q.surname={{ m.last_name|urlencode }}&q.residencePlace={{ m.state|urlencode }}&f.collectionId=1989702"
+                 target="_blank" rel="noopener" class="ext-link bureau-link">
+                Freedmen's Bureau
+              </a>
+              <a href="https://www.ancestry.com/search/collections/8058/?name={{ m.first_name|urlencode }}_{{ m.last_name|urlencode }}&residence_1={{ m.state|urlencode }}_12{% if m.birth_year %}&birth={{ m.birth_year }}{% endif %}"
+                 target="_blank" rel="noopener" class="ext-link ancestry-link">
+                Ancestry 1870
+              </a>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if not is_bureau %}
+      <div class="cta-row">
+        <span class="cta-label">Is this your ancestor?</span>
+        <a href="/begin?first={{ m.first_name|urlencode }}&last={{ m.last_name|urlencode }}&year={{ m.birth_year or '' }}&state={{ m.state|urlencode }}&county={{ m.county|urlencode }}{% if r.ipums %}&histid={{ r.ipums.histid|urlencode }}{% endif %}"
+           class="btn-begin">
+          Begin Verification
+        </a>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+  {% endif %}
+
+  {% if family_cluster %}
+  <div class="family-cluster-section">
+    <h3>&#128106; Other {{ query.last_name }} Family Records in the Database</h3>
+    <p class="cluster-note">
+      These individuals share the same surname and may be relatives of your ancestor.
+      Click any name to search for them directly.
+    </p>
+    <div class="cluster-grid">
+      {% for m in family_cluster %}
+      <form action="/search" method="POST" class="cluster-form">
+        <input type="hidden" name="last_name"  value="{{ m.last_name }}">
+        <input type="hidden" name="first_name" value="{{ m.first_name }}">
+        <input type="hidden" name="birth_year" value="{{ m.birth_year or '' }}">
+        <input type="hidden" name="state"      value="{{ m.state }}">
+        <input type="hidden" name="window"     value="10">
+        <button type="submit" class="cluster-item">
+          <span class="cluster-name">{% if m.first_name %}{{ m.first_name }} {% endif %}{{ m.last_name }}</span>
+          <span class="cluster-detail">
+            {% if m.birth_year %}~{{ m.birth_year }}{% endif %}
+            &middot; {{ m.county or '?' }}, {{ m.state }}
+            {% if m.sex %}&middot; {{ m.sex }}{% endif %}
+          </span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="search-card" style="margin-top:32px;">
+    <h2>Search Again</h2>
+    <form action="/search" method="POST">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="last_name2">Last Name *</label>
+          <input type="text" id="last_name2" name="last_name"
+                 value="{{ query.last_name }}" required>
+        </div>
+        <div class="form-group">
+          <label for="first_name2">First Name</label>
+          <input type="text" id="first_name2" name="first_name"
+                 value="{{ query.first_name }}">
+        </div>
+        <div class="form-group">
+          <label for="birth_year2">Est. Birth Year</label>
+          <input type="number" id="birth_year2" name="birth_year"
+                 value="{{ query.birth_year }}" min="1780" max="1865">
+        </div>
+        <div class="form-group">
+          <label for="state2">State</label>
+          <select id="state2" name="state" onchange="updateCountyVis(this.value)">
+            {% for s in states %}
+            <option value="{{ s }}" {% if s == query.state %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="county2">County</label>
+          <select id="county-sel2" name="county" {% if query.state and query.state not in ('Georgia', 'All States') %}style="display:none;"{% endif %}>
+            <option value="">&#8212; Any county &#8212;</option>
+            {% for county in counties %}
+            <option value="{{ county }}" {% if county == query.county %}selected{% endif %}>
+              {{ county }} County
+            </option>
+            {% endfor %}
+          </select>
+          <input type="text" id="county-txt2" name="county"
+                 value="{{ query.county }}"
+                 placeholder="County (optional)"
+                 {% if not query.state or query.state in ('Georgia', 'All States') %}style="display:none;"{% endif %}>
+        </div>
+        <input type="hidden" name="window" value="15">
+        <button type="submit" class="btn-search">
+          Search the <span class="gold-text">1870 Census</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateCountyVis(state) {
+  var sel = document.getElementById('county-sel2');
+  var txt = document.getElementById('county-txt2');
+  if (state === 'Georgia') {
+    if (sel) { sel.style.display = ''; sel.name = 'county'; }
+    if (txt) { txt.style.display = 'none'; txt.name = 'county_unused'; }
+  } else if (state === 'All States') {
+    if (sel) { sel.style.display = 'none'; sel.name = 'county_unused'; }
+    if (txt) { txt.style.display = 'none'; txt.name = 'county_unused'; }
+  } else {
+    if (sel) { sel.style.display = 'none'; sel.name = 'county_unused'; }
+    if (txt) { txt.style.display = ''; txt.name = 'county'; }
+  }
+}
+</script>
+{% endblock %}
