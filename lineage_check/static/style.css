@@ -1057,3 +1057,87 @@ footer strong { color: var(--gold); }
   margin-right: 8px;
 }
 .btn-preview:hover { background: var(--gold); color: var(--blue); }
+
+/* ── Explorer / Browse links ─────────────────────────────────────────────── */
+.btn-explore-link {
+  font-size: 0.82rem; color: var(--gold); text-decoration: none;
+  border: 1px solid var(--gold); border-radius: 20px; padding: 4px 12px;
+  transition: all 0.15s;
+}
+.btn-explore-link:hover { background: var(--gold); color: var(--blue); }
+
+/* ── Comprehensive mobile overhaul ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Header */
+  .header-inner  { padding: 16px 14px 12px; gap: 12px; }
+  .brand h1      { font-size: 1.1rem; }
+  .brand .greek  { font-size: 1.5rem; }
+  .brand p       { display: none; }
+  .crest         { font-size: 2rem; }
+  .tagline       { font-size: 0.65rem; padding: 4px 14px 10px; }
+
+  /* Nav — horizontal scroll, no wrap */
+  .header-nav    { gap: 5px; padding: 0 12px 10px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; }
+  .nav-link      { font-size: 0.68rem; padding: 3px 10px; white-space: nowrap; flex-shrink: 0; }
+
+  /* Stats bar — 2-col grid */
+  .stats-bar-inner { gap: 0; display: grid; grid-template-columns: 1fr 1fr; }
+  .stat-item       { padding: 8px 10px; border-right: 1px solid rgba(255,255,255,0.1); }
+  .stat-num        { font-size: 1rem; }
+  .stat-label      { font-size: 0.58rem; }
+
+  /* Main padding */
+  main { padding: 16px 12px; }
+
+  /* Search card */
+  .search-card { padding: 20px 16px; }
+
+  /* Result cards */
+  .result-header { padding: 12px 14px; }
+  .result-name   { font-size: 1rem; }
+  .conf-bar-wrap { width: 60px; }
+  .result-body   { padding: 14px; }
+
+  /* Household table — horizontal scroll */
+  .household-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* CTA row — stack vertically */
+  .cta-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+  /* Summary table — horizontal scroll */
+  .results-summary { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .summary-table   { min-width: 500px; }
+
+  /* No-results action buttons — full width */
+  .try-grid { flex-direction: column; }
+  .try-btn  { width: 100%; text-align: left; border-radius: 8px; padding: 10px 14px; }
+
+  /* Family cluster — 2 col max */
+  .cluster-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+  /* Research links — wrap tighter */
+  .research-links > div { gap: 6px; }
+  .ext-link { font-size: 0.72rem; padding: 4px 8px; }
+
+  /* About section already has media query — just ensure card padding */
+  .about-card { padding: 14px; }
+
+  /* Coverage grid */
+  .coverage-grid { grid-template-columns: 1fr 1fr; }
+  .coverage-item { padding: 8px 10px; }
+
+  /* Near-miss badge wrap */
+  .near-miss-badge { display: block; margin: 4px 0 0 0; }
+
+  /* Preview cert action row */
+  .preview-cta { flex-direction: column; align-items: stretch; }
+  .btn-verify-now, .btn-print-preview { text-align: center; }
+
+  /* Explorer grids */
+  .explore-county-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .explore-states-grid { grid-template-columns: 1fr 1fr; }
+  .surname-grid        { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+
+  /* Admin table */
+  .admin-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

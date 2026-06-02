@@ -684,6 +684,91 @@ def begin_verification():
                            anc_name=f"{anc_first} {anc_last}")
 
 
+@app.route("/explore")
+def explore():
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+    conn.row_factory = sqlite3.Row
+
+    # GA pipeline counties — sorted by Black record count
+    ga_counties = conn.execute("""
+        SELECT county,
+               COUNT(*) as total,
+               SUM(is_black) as black_count
+        FROM census_ocr_georgia_1870
+        GROUP BY county
+        HAVING black_count > 0
+        ORDER BY black_count DESC
+        LIMIT 40
+    """).fetchall()
+
+    # ocr_records counties (Liberty + McIntosh — fully named, most reliable)
+    ocr_counties = conn.execute("""
+        SELECT county,
+               COUNT(*) as total,
+               SUM(CASE WHEN race_code=2 THEN 1 ELSE 0 END) as black_count
+        FROM ocr_records
+        GROUP BY county
+        ORDER BY black_count DESC
+    """).fetchall()
+
+    # Multi-state coverage
+    states_data = conn.execute("""
+        SELECT state,
+               COUNT(*) as total,
+               SUM(is_black) as black_count
+        FROM census_ocr_1870
+        GROUP BY state
+        ORDER BY black_count DESC
+    """).fetchall()
+
+    conn.close()
+    return render_template("explore.html",
+                           nav_page="explore",
+                           ga_counties=[dict(r) for r in ga_counties],
+                           ocr_counties=[dict(r) for r in ocr_counties],
+                           states_data=[dict(r) for r in states_data])
+
+
+@app.route("/explore/georgia/<county>")
+def explore_county(county):
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+
+    # Top Black surnames in this county from GA pipeline
+    surnames_pipe = conn.execute("""
+        SELECT last_name, COUNT(*) as n, SUM(is_black) as blk
+        FROM census_ocr_georgia_1870
+        WHERE LOWER(county) = LOWER(?) AND is_black = 1
+          AND last_name IS NOT NULL AND last_name != ''
+        GROUP BY last_name
+        ORDER BY n DESC
+        LIMIT 60
+    """, (county,)).fetchall()
+
+    # Also from ocr_records (Liberty/McIntosh)
+    surnames_ocr = conn.execute("""
+        SELECT last_name_raw as last_name, COUNT(*) as n
+        FROM ocr_records
+        WHERE LOWER(county) = LOWER(?) AND race_code = 2
+        GROUP BY last_name_raw
+        ORDER BY n DESC
+        LIMIT 30
+    """, (county,)).fetchall()
+
+    total_black = conn.execute(
+        "SELECT SUM(is_black) FROM census_ocr_georgia_1870 WHERE LOWER(county)=LOWER(?)",
+        (county,)
+    ).fetchone()[0] or 0
+
+    conn.close()
+    return render_template("explore_county.html",
+                           nav_page="explore",
+                           county=county.title(),
+                           state="Georgia",
+                           surnames_pipe=surnames_pipe,
+                           surnames_ocr=surnames_ocr,
+                           total_black=total_black)
+
+
 @app.route("/submission/<submission_id>")
 def submission_status(submission_id):
     try:

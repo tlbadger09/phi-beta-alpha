@@ -125,7 +125,10 @@
 
   {% if stats and stats.states_covered %}
   <div class="coverage-section">
-    <h3>Database Coverage</h3>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+      <h3 style="margin:0;">Database Coverage</h3>
+      <a href="/explore" class="btn-explore-link">Browse by County &#8599;</a>
+    </div>
     <div class="coverage-grid">
       {% set all_states = ["Georgia","Alabama","Florida","South Carolina","North Carolina","Mississippi","Kentucky","Louisiana","Virginia","New York"] %}
       {% for s in all_states %}
@@ -133,7 +136,11 @@
         <span class="coverage-dot"></span>
         <span class="coverage-name">{{ s }}</span>
         {% if s in stats.states_covered %}
+        {% if s == "Georgia" %}
+        <a href="/explore" class="coverage-status" style="color:var(--gold); text-decoration:none;">Browse</a>
+        {% else %}
         <span class="coverage-status">Active</span>
+        {% endif %}
         {% elif pipeline_active and pipeline_active.state == s %}
         <span class="coverage-status" style="color:#4caf50;">Indexing</span>
         {% else %}

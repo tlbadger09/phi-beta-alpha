@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Browse Records by County{% endblock %}
+
+{% block content %}
+<div class="results-header" style="margin-top:20px;">
+  <h2>Browse Records by County</h2>
+  <p class="query-summary">
+    Don't know your ancestor's exact name? Browse counties to see which surnames
+    appear in the 1870 census for that area.
+  </p>
+</div>
+
+{% if ocr_counties %}
+<div class="explore-section">
+  <h3 class="explore-section-title">
+    &#127775; Liberty &amp; McIntosh Counties, Georgia
+    <span class="explore-badge">Fully Named — Highest Confidence</span>
+  </h3>
+  <p class="explore-note">
+    These counties have the most detailed OCR records — every person named, with household context.
+    If your family is from coastal Georgia, start here.
+  </p>
+  <div class="explore-county-grid">
+    {% for c in ocr_counties %}
+    <a href="/explore/georgia/{{ c.county|lower }}" class="explore-county-card">
+      <div class="exp-county-name">{{ c.county }} County</div>
+      <div class="exp-county-stats">
+        <span class="exp-stat-blk">{{ "{:,}".format(c.black_count) }} Black records</span>
+        <span class="exp-stat-total">{{ "{:,}".format(c.total) }} total</span>
+      </div>
+      <div class="exp-county-cta">Browse surnames &#8594;</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="explore-section" style="margin-top:28px;">
+  <h3 class="explore-section-title">
+    &#128205; Georgia — All Counties with Black Records
+  </h3>
+  <p class="explore-note">
+    {{ ga_counties|length }} counties with indexed Black census records from the 1870 Georgia pipeline.
+  </p>
+  <div class="explore-county-grid">
+    {% for c in ga_counties %}
+    <a href="/explore/georgia/{{ c.county|lower }}" class="explore-county-card">
+      <div class="exp-county-name">{{ c.county }} County</div>
+      <div class="exp-county-stats">
+        <span class="exp-stat-blk">{{ "{:,}".format(c.black_count) }} Black</span>
+        <span class="exp-stat-total">{{ "{:,}".format(c.total) }} total</span>
+      </div>
+      <div class="exp-county-cta">Browse surnames &#8594;</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if states_data %}
+<div class="explore-section" style="margin-top:28px;">
+  <h3 class="explore-section-title">&#127758; Other States</h3>
+  <p class="explore-note">
+    Multi-state pipeline records. Coverage varies — search directly or check
+    <a href="/status">pipeline status</a> for your state.
+  </p>
+  <div class="explore-states-grid">
+    {% for s in states_data %}
+    <div class="explore-state-card">
+      <div class="exp-state-name">{{ s.state }}</div>
+      <div class="exp-state-stats">
+        <span class="exp-stat-blk">{{ "{:,}".format(s.black_count or 0) }} Black records</span>
+      </div>
+      <form action="/search" method="POST" style="margin-top:8px;">
+        <input type="hidden" name="last_name" value="">
+        <input type="hidden" name="state" value="{{ s.state }}">
+        <input type="hidden" name="window" value="15">
+        <button type="submit" class="exp-search-btn">Search {{ s.state }}</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.explore-section { background:#fff; border-radius:var(--radius); padding:24px 28px; border:1px solid var(--border); }
+.explore-section-title {
+  font-size:1rem; color:var(--blue); margin-bottom:8px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.explore-badge {
+  font-size:0.68rem; background:var(--gold); color:var(--blue);
+  padding:2px 9px; border-radius:10px; font-weight:bold;
+  text-transform:uppercase; letter-spacing:0.04em;
+}
+.explore-note { font-size:0.83rem; color:#666; margin-bottom:16px; line-height:1.5; }
+.explore-note a { color:var(--blue); }
+
+.explore-county-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.explore-county-card {
+  display:flex; flex-direction:column;
+  background:var(--gray); border:1px solid var(--border);
+  border-radius:6px; padding:12px 14px;
+  text-decoration:none; transition:all 0.15s;
+}
+.explore-county-card:hover {
+  background:var(--blue); border-color:var(--blue);
+}
+.explore-county-card:hover .exp-county-name,
+.explore-county-card:hover .exp-stat-blk,
+.explore-county-card:hover .exp-county-cta { color:#fff; }
+.explore-county-card:hover .exp-stat-total { color:rgba(255,255,255,0.6); }
+
+.exp-county-name { font-weight:bold; color:var(--blue); font-size:0.88rem; }
+.exp-county-stats { margin-top:4px; font-size:0.72rem; }
+.exp-stat-blk  { display:block; color:var(--green); font-weight:bold; }
+.exp-stat-total { display:block; color:#888; }
+.exp-county-cta { font-size:0.72rem; color:var(--gold); margin-top:6px; font-style:italic; }
+
+.explore-states-grid {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px;
+}
+.explore-state-card {
+  background:var(--gray); border:1px solid var(--border);
+  border-radius:6px; padding:14px;
+}
+.exp-state-name { font-weight:bold; color:var(--blue); font-size:0.9rem; }
+.exp-state-stats { font-size:0.75rem; color:var(--green); margin-top:4px; }
+.exp-search-btn {
+  padding:5px 12px; background:var(--blue); color:#fff;
+  border:none; border-radius:4px; font-size:0.75rem;
+  font-family:inherit; cursor:pointer;
+}
+.exp-search-btn:hover { background:var(--blue2); }
+</style>
+{% endblock %}

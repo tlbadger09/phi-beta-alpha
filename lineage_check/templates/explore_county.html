@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ county }} County, {{ state }} — Browse Surnames{% endblock %}
+
+{% block content %}
+<div style="margin-top:20px;">
+  <a href="/explore" class="back-link">&#8592; All Counties</a>
+
+  <div class="results-header" style="margin-top:16px;">
+    <h2>{{ county }} County, {{ state }}</h2>
+    <p class="query-summary">
+      {{ "{:,}".format(total_black) }} Black Americans recorded in {{ county }} County in the 1870 census.
+      Click any surname to search for that family.
+    </p>
+  </div>
+
+  {% if surnames_ocr %}
+  <div class="explore-section" style="margin-bottom:20px;">
+    <h3 class="explore-section-title">
+      &#127775; Fully Named Records
+      <span class="explore-badge">Highest Confidence</span>
+    </h3>
+    <p class="explore-note">
+      These records have names, household members, occupations, and birthplaces.
+    </p>
+    <div class="surname-grid">
+      {% for s in surnames_ocr %}
+      <form action="/search" method="POST" class="surname-form">
+        <input type="hidden" name="last_name"  value="{{ s.last_name }}">
+        <input type="hidden" name="state"      value="{{ state }}">
+        <input type="hidden" name="county"     value="{{ county }}">
+        <input type="hidden" name="window"     value="20">
+        <button type="submit" class="surname-btn">
+          <span class="sn-name">{{ s.last_name }}</span>
+          <span class="sn-count">{{ s.n }} record{{ 's' if s.n != 1 else '' }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if surnames_pipe %}
+  <div class="explore-section">
+    <h3 class="explore-section-title">
+      &#128247; Pipeline Records — {{ county }} County
+    </h3>
+    <p class="explore-note">
+      OCR-processed records from NARA microfilm. Click any surname to search.
+    </p>
+    <div class="surname-grid">
+      {% for s in surnames_pipe %}
+      <form action="/search" method="POST" class="surname-form">
+        <input type="hidden" name="last_name"  value="{{ s.last_name }}">
+        <input type="hidden" name="state"      value="{{ state }}">
+        <input type="hidden" name="county"     value="{{ county }}">
+        <input type="hidden" name="window"     value="20">
+        <button type="submit" class="surname-btn">
+          <span class="sn-name">{{ s.last_name }}</span>
+          <span class="sn-count">{{ s.n }} record{{ 's' if s.n != 1 else '' }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not surnames_pipe and not surnames_ocr %}
+  <div class="no-results">
+    <h3>No named Black records found for {{ county }} County</h3>
+    <p>This county may not yet be in our named OCR database. Try searching directly or check
+    <a href="/status">pipeline status</a>.</p>
+  </div>
+  {% endif %}
+
+  <div style="margin-top:24px; text-align:center;">
+    <p style="font-size:0.85rem; color:#888; margin-bottom:12px;">
+      Don't see the surname you're looking for? Search the full database:
+    </p>
+    <form action="/search" method="POST" style="display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+      <input type="text" name="last_name" placeholder="Surname" required
+             style="padding:10px 14px; border:1px solid #ccc; border-radius:4px; font-size:0.95rem; font-family:inherit; width:180px;">
+      <input type="hidden" name="state"  value="{{ state }}">
+      <input type="hidden" name="county" value="{{ county }}">
+      <input type="hidden" name="window" value="20">
+      <button type="submit" class="btn-search" style="grid-column:auto; padding:10px 20px; font-size:0.9rem;">
+        Search {{ county }} County
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.explore-section { background:#fff; border-radius:var(--radius); padding:24px 28px; border:1px solid var(--border); }
+.explore-section-title {
+  font-size:1rem; color:var(--blue); margin-bottom:8px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.explore-badge {
+  font-size:0.68rem; background:var(--gold); color:var(--blue);
+  padding:2px 9px; border-radius:10px; font-weight:bold; text-transform:uppercase; letter-spacing:0.04em;
+}
+.explore-note { font-size:0.83rem; color:#666; margin-bottom:16px; line-height:1.5; }
+.explore-note a { color:var(--blue); }
+
+.surname-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.surname-form { display:contents; }
+.surname-btn {
+  display:flex; flex-direction:column; align-items:flex-start;
+  padding:10px 14px; background:var(--gray); border:1px solid var(--border);
+  border-radius:6px; cursor:pointer; text-align:left; font-family:inherit;
+  transition:all 0.15s; width:100%;
+}
+.surname-btn:hover { background:var(--blue); border-color:var(--blue); }
+.surname-btn:hover .sn-name { color:#fff; }
+.surname-btn:hover .sn-count { color:rgba(255,255,255,0.7); }
+.sn-name  { font-weight:bold; color:var(--blue); font-size:0.9rem; }
+.sn-count { font-size:0.72rem; color:#888; margin-top:2px; }
+</style>
+{% endblock %}
