@@ -1141,3 +1141,14 @@ footer strong { color: var(--gold); }
   /* Admin table */
   .admin-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* ── Example searches (homepage) ─────────────────────────────────────────── */
+.example-searches { margin-top: 20px; }
+.example-label    { font-size: 0.78rem; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.example-grid     { display: flex; flex-wrap: wrap; gap: 8px; }
+.example-btn {
+  padding: 6px 14px; background: var(--white); border: 1px solid var(--border);
+  border-radius: 20px; font-size: 0.82rem; color: var(--blue);
+  font-family: inherit; cursor: pointer; transition: all 0.15s;
+}
+.example-btn:hover { background: var(--blue); color: var(--white); border-color: var(--blue); }

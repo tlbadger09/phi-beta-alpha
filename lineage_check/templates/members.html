@@ -2,47 +2,218 @@
 {% block title %}Verified Members{% endblock %}
 
 {% block content %}
-  <a href="/" class="back-link">&#8592; Back to Search</a>
 
-  <div class="results-header" style="margin-top:20px;">
-    <h2>Verified Lineage Members</h2>
-    <p class="query-summary">
-      {{ members|length }} member{{ 's' if members|length != 1 else '' }} with documented lineage chains
+<div class="members-hero">
+  <div class="members-hero-inner">
+    <div class="members-hero-greek">ΦΒΑ</div>
+    <h2 class="members-hero-title">Verified Foundational Black Americans</h2>
+    <p class="members-hero-sub">
+      These individuals have documented, evidence-backed lineage chains connecting them to
+      enslaved ancestors in the 1870 U.S. Federal Census.
+      <em>"You don't join it, you were born it."</em>
     </p>
+    <div class="members-count-row">
+      <div class="members-count-item">
+        <span class="members-count-num">{{ members|length }}</span>
+        <span class="members-count-label">Verified Members</span>
+      </div>
+      <div class="members-count-item">
+        <span class="members-count-num">{{ members|sum(attribute='ancestor_count') }}</span>
+        <span class="members-count-label">Ancestors Documented</span>
+      </div>
+      <div class="members-count-item">
+        <span class="members-count-num">{{ members|sum(attribute='verified_count') }}</span>
+        <span class="members-count-label">Ancestors Verified</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% for m in members %}
+<div class="member-entry">
+
+  <div class="member-entry-header">
+    <div>
+      <div class="member-entry-name">{{ m.first_name }} {{ m.last_name }}</div>
+      <div class="member-entry-sub">
+        {% if m.birth_county %}{{ m.birth_county }} County, {{ m.birth_state }}{% elif m.birth_state %}{{ m.birth_state }}{% endif %}
+        &nbsp;&middot;&nbsp; {{ m.ancestor_count }} ancestors &nbsp;&middot;&nbsp;
+        <span style="color:var(--green);">{{ m.verified_count }} verified</span>
+      </div>
+    </div>
+    <div class="member-entry-actions">
+      <a href="/lineage/{{ m.member_id }}" class="btn-primary" style="font-size:0.82rem; padding:7px 14px;">
+        Full Timeline
+      </a>
+      <a href="/certificate/{{ m.member_id }}" class="btn-gold" style="font-size:0.82rem; padding:7px 14px;">
+        Certificate
+      </a>
+    </div>
   </div>
 
-  {% for m in members %}
-  <div class="result-card" style="margin-bottom:16px;">
-    <div class="result-header">
-      <div>
-        <div class="result-name">{{ m.first_name }} {{ m.last_name }}</div>
-        <div class="result-county">
-          {% if m.birth_county %}{{ m.birth_county }} County, {{ m.birth_state }}{% elif m.birth_state %}{{ m.birth_state }}{% endif %}
-          {% if m.birth_year %} &middot; Born ~{{ m.birth_year }}{% endif %}
-          &nbsp;&middot;&nbsp; {{ m.ancestor_count }} ancestors documented
-          ({{ m.verified_count }} verified)
+  {% if m.ancestors %}
+  <div class="member-chain">
+    <div class="chain-label">Verified Lineage Chain</div>
+    <div class="chain-nodes">
+      {% for anc in m.ancestors %}
+      {% if anc.verified or anc.ipums_tier %}
+      <div class="chain-node {% if loop.last %}chain-node-member{% endif %}">
+        <div class="chain-dot {% if loop.first %}chain-dot-root{% endif %}"></div>
+        <div class="chain-info">
+          <div class="chain-name">{{ anc.first_name }} {{ anc.last_name }}</div>
+          <div class="chain-detail">
+            ~{{ anc.birth_year or '?' }}
+            {% if anc.birth_county %} &middot; {{ anc.birth_county }}, {{ anc.birth_state }}{% endif %}
+            {% if anc.relationship %} &middot; <em>{{ anc.relationship }}</em>{% endif %}
+          </div>
+          {% if anc.ipums_tier %}
+          <span class="chain-tier
+            {% if 'Tier-3' in anc.ipums_tier or 'Tier 3' in anc.ipums_tier %}chain-tier-3
+            {% elif 'Tier-2' in anc.ipums_tier or 'Tier 2' in anc.ipums_tier %}chain-tier-2
+            {% else %}chain-tier-1{% endif %}">
+            {{ anc.ipums_tier }}
+          </span>
+          {% endif %}
         </div>
       </div>
-      <div class="confidence-badge">
-        <span class="tier-badge tier-3">Verified FBA</span>
+      {% if not loop.last and m.ancestors[loop.index].verified %}<div class="chain-line"></div>{% endif %}
+      {% endif %}
+      {% endfor %}
+      <div class="chain-node">
+        <div class="chain-dot chain-dot-member"></div>
+        <div class="chain-info">
+          <div class="chain-name" style="color:#333;">{{ m.first_name }} {{ m.last_name }}</div>
+          <div class="chain-detail">Member</div>
+          <span class="chain-tier chain-tier-member">&#10003; FBA Verified</span>
+        </div>
       </div>
     </div>
-    <div class="result-body" style="display:flex; gap:12px; flex-wrap:wrap; padding-top:16px;">
-      <a href="/lineage/{{ m.member_id }}" class="btn-primary">
-        View Lineage Chain
-      </a>
-      <a href="/certificate/{{ m.member_id }}" class="btn-gold">
-        Print Certificate
-      </a>
+  </div>
+  {% endif %}
+
+  {% if m.chain_root %}
+  <div class="member-root-summary">
+    Documented back to <strong>{{ m.chain_root }}</strong>
+    (~{{ m.chain_root_year or '?' }}{% if m.chain_root_loc %}, {{ m.chain_root_loc }}{% endif %})
+  </div>
+  {% endif %}
+
+</div>
+{% else %}
+<div class="no-results" style="text-align:center; padding:60px 40px;">
+  <div style="font-size:3rem; margin-bottom:16px;">ΦΒΑ</div>
+  <h3>No verified members yet</h3>
+  <p style="max-width:480px; margin:12px auto 24px;">
+    The first verified members will appear here once their lineage chains are
+    confirmed through documentary evidence. Search the 1870 Census to begin your verification.
+  </p>
+  <a href="/" class="btn-primary">Search the 1870 Census</a>
+</div>
+{% endfor %}
+
+{% if members %}
+<div class="members-join-cta">
+  <div class="join-cta-inner">
+    <h3>Your lineage is waiting to be documented.</h3>
+    <p>
+      If your ancestors were enslaved in the United States, there is a record of them.
+      Search by surname, browse by county, or submit a verification request.
+    </p>
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:20px;">
+      <a href="/" class="btn-primary" style="font-size:0.95rem; padding:12px 24px;">Search the Census</a>
+      <a href="/explore" class="btn-gold" style="font-size:0.95rem; padding:12px 24px;">Browse by County</a>
     </div>
   </div>
-  {% else %}
-  <div class="no-results">
-    <h3>No verified members yet</h3>
-    <p>Search the 1870 Census to find your ancestor and begin your verification process.</p>
-    <div style="margin-top:20px;">
-      <a href="/" class="btn-primary">Search the Census</a>
-    </div>
-  </div>
-  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block head_extra %}
+<style>
+/* Members hero */
+.members-hero {
+  background: var(--blue);
+  border-radius: var(--radius);
+  margin-bottom: 28px;
+  border: 3px solid var(--gold);
+  overflow: hidden;
+}
+.members-hero-inner { padding: 36px 40px; text-align: center; }
+.members-hero-greek { font-size: 3rem; color: var(--gold); line-height: 1; margin-bottom: 8px; }
+.members-hero-title { font-size: 1.4rem; color: #fff; letter-spacing: 0.04em; margin-bottom: 10px; }
+.members-hero-sub   { font-size: 0.88rem; color: #9db3d8; line-height: 1.6; max-width: 560px; margin: 0 auto 20px; }
+.members-count-row  { display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; }
+.members-count-item { display: flex; flex-direction: column; align-items: center; }
+.members-count-num  { font-size: 1.8rem; font-weight: bold; color: var(--gold); }
+.members-count-label{ font-size: 0.65rem; color: #9db3d8; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+/* Member entry */
+.member-entry {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.member-entry-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  padding: 20px 24px 16px;
+  background: var(--blue);
+}
+.member-entry-name { font-size: 1.2rem; font-weight: bold; color: #fff; }
+.member-entry-sub  { font-size: 0.82rem; color: #9db3d8; margin-top: 4px; }
+.member-entry-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Lineage chain */
+.member-chain { padding: 20px 24px 12px; }
+.chain-label  { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: #aaa; margin-bottom: 12px; }
+.chain-nodes  { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 0; }
+.chain-node   { display: flex; align-items: flex-start; gap: 8px; }
+.chain-line   { width: 24px; height: 2px; background: var(--gold); margin-top: 16px; flex-shrink: 0; }
+.chain-dot    {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 4px;
+  background: var(--gold); border: 2px solid var(--blue);
+}
+.chain-dot-root   { background: var(--blue); border-color: var(--gold); width: 14px; height: 14px; }
+.chain-dot-member { background: var(--green); border-color: var(--green); }
+.chain-info  { min-width: 110px; max-width: 160px; }
+.chain-name  { font-size: 0.85rem; font-weight: bold; color: var(--blue); line-height: 1.2; }
+.chain-detail{ font-size: 0.72rem; color: #888; margin-top: 2px; line-height: 1.3; }
+.chain-tier  {
+  display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 8px;
+  font-size: 0.62rem; font-weight: bold;
+}
+.chain-tier-3      { background: #e8f5e9; color: #1a6e3a; }
+.chain-tier-2      { background: #e3f2fd; color: #1565c0; }
+.chain-tier-1      { background: #fff3e0; color: #e65100; }
+.chain-tier-member { background: #e8f5e9; color: #1a6e3a; }
+
+.member-root-summary {
+  padding: 8px 24px 14px;
+  font-size: 0.8rem; color: #666; font-style: italic; border-top: 1px solid #f0f0f0;
+}
+
+/* Join CTA */
+.members-join-cta {
+  background: var(--blue); border-radius: var(--radius);
+  border: 3px solid var(--gold); margin-top: 28px; overflow: hidden;
+}
+.join-cta-inner { padding: 36px 40px; text-align: center; color: #fff; }
+.join-cta-inner h3 { font-size: 1.2rem; color: var(--gold); margin-bottom: 10px; }
+.join-cta-inner p  { font-size: 0.88rem; color: #9db3d8; line-height: 1.6; max-width: 500px; margin: 0 auto; }
+
+@media (max-width: 640px) {
+  .members-hero-inner { padding: 24px 16px; }
+  .members-count-row  { gap: 20px; }
+  .member-chain       { padding: 14px 14px 8px; }
+  .chain-nodes        { gap: 2px; }
+  .chain-info         { min-width: 90px; max-width: 130px; }
+  .chain-line         { width: 14px; }
+  .member-entry-header{ padding: 14px 16px 12px; }
+  .join-cta-inner     { padding: 24px 16px; }
+}
+</style>
 {% endblock %}

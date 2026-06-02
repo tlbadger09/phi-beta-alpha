@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Browse {{ county }} County Records{% endblock %}
+
+{% block content %}
+<div style="margin-top:20px;">
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+    <a href="/explore/georgia/{{ county|lower }}" class="back-link">&#8592; {{ county }} Surnames</a>
+    <a href="/explore" class="back-link">&#8592; All Counties</a>
+  </div>
+
+  <div class="results-header">
+    <h2>{{ county }} County, {{ state }} &mdash; All Black Records</h2>
+    <p class="query-summary">
+      {{ "{:,}".format(total) }} Black Americans in {{ county }} County in the 1870 U.S. Federal Census.
+      Page {{ page }} of {{ pages }}.
+    </p>
+  </div>
+
+  <!-- Sort + pagination controls -->
+  <div class="browse-controls">
+    <div class="browse-sort">
+      <span style="font-size:0.8rem; color:#888;">Sort by:</span>
+      <a href="?sort=name&page=1" class="sort-btn {% if sort=='name' %}active{% endif %}">Name</a>
+      <a href="?sort=age&page=1"  class="sort-btn {% if sort=='age'  %}active{% endif %}">Age</a>
+      <a href="?sort=occupation&page=1" class="sort-btn {% if sort=='occupation' %}active{% endif %}">Occupation</a>
+    </div>
+    <div class="browse-pages">
+      {% if page > 1 %}
+      <a href="?sort={{ sort }}&page={{ page - 1 }}" class="page-btn">&#8592; Prev</a>
+      {% endif %}
+      <span class="page-info">{{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a href="?sort={{ sort }}&page={{ page + 1 }}" class="page-btn">Next &#8594;</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Records table -->
+  <div class="browse-table-wrap">
+    <table class="browse-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Age</th>
+          <th>Sex</th>
+          <th>Occupation</th>
+          <th>Birthplace</th>
+          <th>Relationship</th>
+          <th>Search</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr class="browse-row">
+          <td class="browse-name">
+            <strong>{% if r.first_name %}{{ r.first_name }} {% endif %}{{ r.last_name }}</strong>
+          </td>
+          <td>{{ r.age or '—' }}</td>
+          <td>{{ r.sex or '—' }}</td>
+          <td>{{ r.occupation or '—' }}</td>
+          <td>{{ r.birthplace or '—' }}</td>
+          <td style="font-style:italic; font-size:0.8rem; color:#888;">{{ r.relationship or '—' }}</td>
+          <td>
+            <form action="/search" method="POST" style="display:inline;">
+              <input type="hidden" name="last_name"  value="{{ r.last_name }}">
+              <input type="hidden" name="first_name" value="{{ r.first_name or '' }}">
+              <input type="hidden" name="state"      value="{{ state }}">
+              <input type="hidden" name="county"     value="{{ county }}">
+              <input type="hidden" name="window"     value="15">
+              <button type="submit" class="browse-search-btn" title="Search for {{ r.first_name }} {{ r.last_name }}">
+                Search
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Bottom pagination -->
+  <div class="browse-controls" style="margin-top:16px;">
+    <div></div>
+    <div class="browse-pages">
+      {% if page > 1 %}
+      <a href="?sort={{ sort }}&page=1" class="page-btn">&#171; First</a>
+      <a href="?sort={{ sort }}&page={{ page - 1 }}" class="page-btn">&#8592; Prev</a>
+      {% endif %}
+      <span class="page-info">Page {{ page }} of {{ pages }} ({{ "{:,}".format(total) }} records)</span>
+      {% if page < pages %}
+      <a href="?sort={{ sort }}&page={{ page + 1 }}" class="page-btn">Next &#8594;</a>
+      <a href="?sort={{ sort }}&page={{ pages }}" class="page-btn">Last &#187;</a>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.browse-controls {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; margin-bottom: 12px;
+}
+.browse-sort { display: flex; align-items: center; gap: 6px; }
+.sort-btn {
+  padding: 4px 12px; border-radius: 20px; font-size: 0.78rem;
+  border: 1px solid var(--border); color: var(--blue); text-decoration: none;
+  transition: all 0.15s;
+}
+.sort-btn:hover, .sort-btn.active {
+  background: var(--blue); color: #fff; border-color: var(--blue);
+}
+.browse-pages { display: flex; align-items: center; gap: 8px; }
+.page-btn {
+  padding: 4px 12px; border-radius: 4px; font-size: 0.8rem;
+  background: var(--gray); border: 1px solid var(--border);
+  color: var(--blue); text-decoration: none; transition: all 0.15s;
+}
+.page-btn:hover { background: var(--blue); color: #fff; }
+.page-info { font-size: 0.8rem; color: #888; }
+
+.browse-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.browse-table {
+  width: 100%; border-collapse: collapse; font-size: 0.84rem;
+  background: #fff; border-radius: var(--radius);
+  overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+.browse-table thead tr { background: var(--blue); color: #fff; }
+.browse-table th { padding: 9px 12px; text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.browse-row td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+.browse-row:hover td { background: #f8f9ff; }
+.browse-name { min-width: 140px; }
+.browse-search-btn {
+  padding: 3px 10px; background: var(--blue); color: #fff;
+  border: none; border-radius: 4px; font-size: 0.72rem;
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+}
+.browse-search-btn:hover { background: var(--blue2); }
+</style>
+{% endblock %}

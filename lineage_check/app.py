@@ -370,9 +370,9 @@ def members_view():
     try:
         conn = sqlite3.connect(str(DB_PATH), timeout=5)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("""
+        member_rows = conn.execute("""
             SELECT m.member_id, m.first_name, m.last_name, m.birth_year,
-                   m.birth_state, m.birth_county,
+                   m.birth_state, m.birth_county, m.notes,
                    COUNT(a.ancestor_id) as ancestor_count,
                    SUM(a.verified) as verified_count
             FROM members m
@@ -380,9 +380,29 @@ def members_view():
             GROUP BY m.member_id
             ORDER BY m.last_name, m.first_name
         """).fetchall()
+
+        members = []
+        for m in member_rows:
+            m = dict(m)
+            ancestors = conn.execute("""
+                SELECT first_name, last_name, birth_year, birth_county,
+                       birth_state, relationship, ipums_tier, verified, notes
+                FROM lineage_ancestors
+                WHERE member_id = ?
+                ORDER BY generation
+            """, (m["member_id"],)).fetchall()
+            m["ancestors"] = [dict(a) for a in ancestors]
+            # Build chain label: oldest verified ancestor → member
+            verified = [a for a in m["ancestors"] if a["verified"]]
+            if verified:
+                oldest = verified[0]
+                m["chain_root"] = f"{oldest['first_name']} {oldest['last_name']}"
+                m["chain_root_year"] = oldest["birth_year"]
+                m["chain_root_loc"] = f"{oldest['birth_county'] or ''}, {oldest['birth_state'] or ''}".strip(", ")
+            members.append(m)
+
         conn.close()
-        return render_template("members.html", nav_page="members",
-                               members=[dict(r) for r in rows])
+        return render_template("members.html", nav_page="members", members=members)
     except Exception as e:
         return f"Error: {e}", 500
 
@@ -727,6 +747,46 @@ def explore():
                            ga_counties=[dict(r) for r in ga_counties],
                            ocr_counties=[dict(r) for r in ocr_counties],
                            states_data=[dict(r) for r in states_data])
+
+
+@app.route("/explore/georgia/<county>/browse")
+def browse_county(county):
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = 60
+    offset   = (page - 1) * per_page
+    sort     = request.args.get("sort", "name")  # name | age | occupation
+
+    order = {
+        "name":       "last_name, first_name",
+        "age":        "CAST(age AS INTEGER)",
+        "occupation": "occupation, last_name",
+    }.get(sort, "last_name, first_name")
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+
+    total = conn.execute(
+        "SELECT COUNT(*) FROM census_ocr_georgia_1870 WHERE LOWER(county)=LOWER(?) AND is_black=1",
+        (county,)
+    ).fetchone()[0]
+
+    records = conn.execute(f"""
+        SELECT first_name, last_name, age, sex, occupation, birthplace,
+               household_num, reel_number, page_number, relationship, county
+        FROM census_ocr_georgia_1870
+        WHERE LOWER(county) = LOWER(?) AND is_black = 1
+        ORDER BY {order}
+        LIMIT ? OFFSET ?
+    """, (county, per_page, offset)).fetchall()
+
+    conn.close()
+    pages = max(1, ((total - 1) // per_page) + 1)
+    return render_template("browse_county.html",
+                           nav_page="explore",
+                           county=county.title(), state="Georgia",
+                           records=[dict(r) for r in records],
+                           total=total, page=page,
+                           per_page=per_page, pages=pages, sort=sort)
 
 
 @app.route("/explore/georgia/<county>")

@@ -96,6 +96,20 @@
     </form>
   </div>
 
+  <div class="example-searches">
+    <p class="example-label">Common FBA surnames &mdash; click to search:</p>
+    <div class="example-grid">
+      {% for surname in ["Freeman","Johnson","Williams","Brown","Davis","Jackson","Smith","Jones","Harris","Wilson","Carter","Anderson","Martin","Thomas","Moore"] %}
+      <form action="/search" method="POST" style="display:contents;">
+        <input type="hidden" name="last_name" value="{{ surname }}">
+        <input type="hidden" name="state" value="Georgia">
+        <input type="hidden" name="window" value="20">
+        <button type="submit" class="example-btn">{{ surname }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+
   <div class="about-section">
     <div class="about-card">
       <h3>What is Lineage Check?</h3>
