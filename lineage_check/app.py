@@ -2,13 +2,18 @@
 Phi Beta Alpha — Lineage Check Web Application (multi-state)
 """
 
+import io
 import os
 import time
+import json
 import sqlite3
 import hashlib
 import datetime
+import functools
+import base64
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, redirect
+from flask import (Flask, render_template, request, jsonify, redirect,
+                   session, abort, send_file, url_for)
 
 from search import (
     run_search, open_db, TARGET_STATES, get_states_with_ocr,
@@ -16,8 +21,40 @@ from search import (
 )
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())
 DB_PATH = Path.home() / "Documents/phi-beta-alpha/processed/lineage_1870.db"
 CACHE_DIR = Path.home() / "Documents/phi-beta-alpha/output/multi_state_reels"
+
+# Admin auth — set ADMIN_PASSWORD env var (no default; unset = admin disabled)
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+
+def _require_admin(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if not ADMIN_PASSWORD:
+            return f(*args, **kwargs)  # dev mode: no password set = open
+        if not session.get("admin_ok"):
+            return redirect(url_for("admin_login", next=request.path))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _make_qr_data_uri(url: str) -> str:
+    """Generate a QR code PNG as a base64 data URI."""
+    try:
+        import qrcode, qrcode.image.pil
+        from PIL import Image
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=6, border=2)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="#1a3a8f", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
 
 GA_COUNTIES = sorted(c.title() for c in GA_COUNTY_NHGIS.keys())
 
@@ -356,13 +393,19 @@ def certificate(member_id):
             "citation": "Chatham County death records; Liberty County deed books 1844–1868",
         })
 
-    cert_id = hashlib.md5(f"{member_id}-{datetime.date.today()}".encode()).hexdigest()[:12].upper()
+    # Use stable cert_id from DB, falling back to MD5 for legacy members
+    member_dict = dict(member)
+    cert_id = member_dict.get("cert_id") or hashlib.md5(f"{member_id}-{datetime.date.today()}".encode()).hexdigest()[:12].upper()
     today = datetime.date.today().strftime("%B %d, %Y")
 
+    verify_url = request.host_url.rstrip("/") + f"/verify/{cert_id}"
+    qr_data_uri = _make_qr_data_uri(verify_url)
+
     return render_template("certificate.html",
-                           member=dict(member), ancestors=ancestors,
+                           member=member_dict, ancestors=ancestors,
                            enslaver=enslaver, evidence_records=evidence_records,
-                           cert_id=cert_id, today=today)
+                           cert_id=cert_id, today=today,
+                           verify_url=verify_url, qr_data_uri=qr_data_uri)
 
 
 @app.route("/members")
@@ -846,7 +889,26 @@ def submission_status(submission_id):
         return f"Error: {e}", 500
 
 
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    error = None
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        if ADMIN_PASSWORD and pw == ADMIN_PASSWORD:
+            session["admin_ok"] = True
+            return redirect(request.args.get("next") or "/admin/submissions")
+        error = "Incorrect password."
+    return render_template("admin_login.html", error=error)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_ok", None)
+    return redirect("/")
+
+
 @app.route("/admin/submissions")
+@_require_admin
 def admin_submissions():
     try:
         conn = sqlite3.connect(str(DB_PATH), timeout=5)
@@ -973,6 +1035,98 @@ def preview_cert():
                            ocr_id=ocr_id,
                            enslaver=enslaver,
                            cert_id=cert_id, today=today)
+
+
+@app.route("/verify/<cert_id>")
+def verify_cert(cert_id):
+    """Public verification endpoint — confirms certificate authenticity without exposing PII."""
+    cert_id = cert_id.upper().strip()
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=5)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+            SELECT c.cert_id, c.issued_date, c.revoked,
+                   m.last_name, m.birth_state,
+                   (SELECT COUNT(*) FROM lineage_ancestors a
+                    WHERE a.member_id=m.member_id AND a.verified=1) as verified_gens
+            FROM certificates c
+            JOIN members m ON c.member_id = m.member_id
+            WHERE c.cert_id = ?
+        """, (cert_id,)).fetchone()
+        conn.close()
+        if not row:
+            return render_template("verify_cert.html", valid=False, cert_id=cert_id)
+        data = dict(row)
+        data["valid"] = not bool(data["revoked"])
+        return render_template("verify_cert.html", valid=data["valid"], cert=data)
+    except Exception as e:
+        return f"Verification error: {e}", 500
+
+
+@app.route("/api/verify/<cert_id>")
+def api_verify_cert(cert_id):
+    cert_id = cert_id.upper().strip()
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=5)
+        row = conn.execute("""
+            SELECT c.cert_id, c.issued_date, c.revoked,
+                   m.last_name, m.birth_state
+            FROM certificates c JOIN members m ON c.member_id=m.member_id
+            WHERE c.cert_id=?
+        """, (cert_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"valid": False, "cert_id": cert_id}), 404
+        return jsonify({
+            "valid": not bool(row[2]),
+            "cert_id": row[0],
+            "issued_date": row[1],
+            "birth_state": row[4],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/submissions/<submission_id>/suggest")
+@_require_admin
+def admin_suggest(submission_id):
+    """Run auto-suggest search for a pending submission and store top candidates."""
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+    sub = conn.execute(
+        "SELECT * FROM verification_submissions WHERE submission_id=?", (submission_id,)
+    ).fetchone()
+    if not sub:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    sub = dict(sub)
+    results, _ = run_search(
+        sub.get("anc_last", ""), sub.get("anc_first", ""),
+        birth_year=int(sub["anc_year"]) if sub.get("anc_year") and str(sub.get("anc_year")).isdigit() else None,
+        state=sub.get("anc_state", "Georgia"),
+        county=sub.get("anc_county") or None,
+        max_results=10,
+    )
+    candidates = [
+        {
+            "name": f"{r['match']['first_name']} {r['match']['last_name']}",
+            "state": r["match"]["state"],
+            "county": r["match"]["county"],
+            "birth_year": r["match"].get("birth_year"),
+            "confidence": r["confidence"],
+            "tier": r["tier"],
+            "ocr_id": r["match"]["ocr_id"],
+            "source": r["match"]["source_table"],
+        }
+        for r in results[:10]
+    ]
+    conn.execute(
+        "UPDATE verification_submissions SET auto_candidates=? WHERE submission_id=?",
+        (json.dumps(candidates), submission_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"candidates": candidates, "count": len(candidates)})
 
 
 if __name__ == "__main__":

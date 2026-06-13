@@ -382,17 +382,29 @@
     </table>
     {% endif %}
 
-    <!-- Seal -->
-    <div class="cert-seal">
-      <div class="cert-seal-symbol">⚖</div>
-      <div style="color: var(--blue); font-weight:bold; font-size:0.85rem; margin-top:8px;">
-        Phi Beta Alpha Historical Lineage Society, Inc.
+    <!-- Seal + QR -->
+    <div class="cert-seal" style="display:flex; align-items:center; justify-content:center; gap:2rem; flex-wrap:wrap;">
+      <div style="text-align:center;">
+        <div class="cert-seal-symbol">⚖</div>
+        <div style="color: var(--blue); font-weight:bold; font-size:0.85rem; margin-top:8px;">
+          Phi Beta Alpha Historical Lineage Society, Inc.
+        </div>
+        <div class="cert-date">Issued: {{ today }}</div>
+        <div class="cert-cert-num" style="font-size:.72rem; letter-spacing:.1em; margin-top:4px;">
+          CERT #{{ cert_id }}
+        </div>
+        <div class="cert-cert-num" style="margin-top:2px;">
+          phibetaalpha.org &nbsp;·&nbsp; EIN 41-4969999
+        </div>
       </div>
-      <div class="cert-date">Certificate generated: {{ today }}</div>
-      <div class="cert-cert-num">
-        Certificate No. {{ cert_id }} &nbsp;·&nbsp;
-        phibetaalpha.org &nbsp;·&nbsp; EIN 41-4969999
+      {% if qr_data_uri %}
+      <div style="text-align:center;">
+        <img src="{{ qr_data_uri }}" alt="Verification QR Code"
+             style="width:96px; height:96px; border:2px solid #c9a84c; border-radius:4px;">
+        <div style="font-size:.65rem; color:#888; margin-top:4px;">Scan to verify</div>
+        <div style="font-size:.6rem; color:#aaa; word-break:break-all; max-width:120px;">{{ verify_url }}</div>
       </div>
+      {% endif %}
     </div>
 
   </div>

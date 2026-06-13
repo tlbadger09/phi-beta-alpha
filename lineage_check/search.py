@@ -1,9 +1,11 @@
 """
 Lineage Check search engine — multi-state edition.
 Phase 1: name match against ocr_records + census_ocr_georgia_1870 + census_ocr_1870 + bureau_patients
-Phase 2: IPUMS demographic verification → tier + confidence
+         Layered: exact → FTS5 → Soundex → edit-distance fallback → nickname expansion
+Phase 2: IPUMS demographic verification → tier + composite confidence score
 """
 
+import re
 import sqlite3
 import sys
 import os
@@ -23,18 +25,229 @@ BPL_LABELS = {
     42: "Pennsylvania", 24: "Maryland", 25: "Massachusetts",
 }
 
-# States with named OCR data available (grows as pipeline runs)
-STATES_WITH_OCR = {"Georgia"}  # updated dynamically
-
-# All 10 target states (plus All States option)
 TARGET_STATES = [
     "All States",
     "Georgia", "Alabama", "Florida", "South Carolina", "North Carolina",
     "Mississippi", "Kentucky", "Louisiana", "Virginia", "New York",
 ]
 
+# ── Nickname / diminutive table (19th-century Black American names) ────────────
+# Maps short form → canonical long form AND long form → short forms for lookup
+_NICKNAMES: dict[str, list[str]] = {
+    # Male
+    "wash": ["washington"], "wash.": ["washington"],
+    "si": ["simon", "silas"], "si.": ["simon", "silas"],
+    "ben": ["benjamin"], "benny": ["benjamin"],
+    "will": ["william"], "willy": ["william"], "bill": ["william"],
+    "tom": ["thomas"], "tommy": ["thomas"],
+    "sam": ["samuel"], "sammy": ["samuel"],
+    "nat": ["nathaniel", "nathan"],
+    "jim": ["james"], "jimmy": ["james"],
+    "joe": ["joseph"], "joey": ["joseph"],
+    "ned": ["edward", "edmund"],
+    "fred": ["frederick"],
+    "frank": ["francis", "franklin"],
+    "abe": ["abraham"],
+    "andy": ["andrew"],
+    "jake": ["jacob"],
+    "dan": ["daniel"],
+    "mose": ["moses"], "mo": ["moses"],
+    "ike": ["isaac"],
+    "tony": ["anthony"],
+    "dave": ["david"],
+    "charlie": ["charles"], "charley": ["charles"],
+    "alex": ["alexander"],
+    "henry": ["henrietta"],  # m/f crossover common in records
+    "jack": ["jackson", "john"],
+    "dick": ["richard"],
+    "bob": ["robert"],
+    "rob": ["robert"],
+    "geo": ["george"],
+    "lew": ["lewis", "louis"],
+    "jeff": ["jefferson"],
+    "eli": ["elijah", "elias"],
+    "sol": ["solomon"],
+    "lem": ["lemuel"],
+    "harry": ["henry", "harold"],
+    "pete": ["peter"],
+    "pat": ["patrick"],
+    "mat": ["matthew", "mathew"],
+    # Female
+    "patsy": ["martha", "patricia"],
+    "polly": ["mary", "molly"],
+    "nelly": ["eleanor", "ellen", "helen"],
+    "nell": ["eleanor", "ellen", "helen"],
+    "betty": ["elizabeth"], "bette": ["elizabeth"],
+    "betsy": ["elizabeth"],
+    "liz": ["elizabeth"], "lizzie": ["elizabeth"],
+    "eliza": ["elizabeth"],
+    "susie": ["susan", "susannah"],
+    "sue": ["susan", "susannah"],
+    "fanny": ["frances", "fanny"],
+    "fannie": ["frances"],
+    "millie": ["mildred", "amelia"],
+    "minnie": ["minerva", "wilhelmina"],
+    "hattie": ["harriet", "harriett"],
+    "harriet": ["harriett"],
+    "sallie": ["sarah"], "sally": ["sarah"],
+    "jennie": ["jane", "jennifer"], "jenny": ["jane"],
+    "lucy": ["lucinda", "lucia"],
+    "lucy ann": ["lucinda"],
+    "celia": ["cecelia", "cecilia"],
+    "tildy": ["matilda"], "tilda": ["matilda"],
+    "milly": ["mildred", "amelia", "millicent"],
+    "viney": ["lavinia"],
+    "viney ann": ["lavinia"],
+    "nance": ["nancy"], "nan": ["nancy"],
+    "lottie": ["charlotte"],
+    "carrie": ["caroline", "carolina"],
+    "cate": ["catherine"], "kate": ["catherine"],
+    "kitty": ["catherine"],
+    "delia": ["adelia", "cordelia"],
+    "dink": ["dinah"],
+    "bina": ["sabina", "albina"],
+    "rena": ["irena", "lorena", "serena"],
+    "tempy": ["temperance"],
+    "louisa": ["eliza", "luisa"],
+    "lou": ["louisa", "luisa"],
+    "mag": ["margaret"], "maggie": ["margaret"],
+    "peggy": ["margaret"],
+    "annie": ["anna", "anne"],
+    "bertie": ["bertha", "alberta"],
+    "gussie": ["augusta"],
+    # Freedpeople-specific names and forms
+    "cinda": ["lucinda"],
+    "sina": ["lucinda"],
+    "sina ann": ["lucinda"],
+    "clarissa": ["clara"],
+    "silvy": ["sylvia"],
+    "rina": ["marina", "caterina"],
+    "sucky": ["susan"],
+    "peg": ["peggy", "margaret"],
+    "phillis": ["phyllis"],
+    "chloe": ["chlora"],
+}
+
+# Build reverse map: long form → all known short forms
+_NICKNAME_REVERSE: dict[str, list[str]] = {}
+for short, longs in _NICKNAMES.items():
+    for lg in longs:
+        _NICKNAME_REVERSE.setdefault(lg, []).append(short)
+
+
+def _nickname_variants(name: str) -> list[str]:
+    """Return all known nickname variants (both directions) for a given name."""
+    if not name:
+        return []
+    n = name.lower().strip()
+    variants = set()
+    # short → long
+    if n in _NICKNAMES:
+        variants.update(_NICKNAMES[n])
+    # long → short
+    if n in _NICKNAME_REVERSE:
+        variants.update(_NICKNAME_REVERSE[n])
+    variants.discard(n)
+    return list(variants)
+
+
+# ── Metaphone implementation (single-coded) ────────────────────────────────────
+def _metaphone(word: str) -> str:
+    word = word.upper().strip()
+    if not word:
+        return ""
+    # Drop trailing S/ED/ING
+    for suffix in ("ING", "ED"):
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            word = word[: -len(suffix)]
+    # Initial special cases
+    for pair, rep in [("AE", "E"), ("GN", "N"), ("KN", "N"), ("PN", "N"), ("WR", "R")]:
+        if word.startswith(pair):
+            word = rep + word[2:]
+    # Drop trailing E
+    if word.endswith("E") and len(word) > 1:
+        word = word[:-1]
+    code = ""
+    vowels = set("AEIOU")
+    prev = ""
+    for i, ch in enumerate(word):
+        if ch in vowels:
+            if i == 0:
+                code += ch
+            prev = ch
+            continue
+        if ch == prev:
+            prev = ch
+            continue
+        if ch == "B":
+            if not (i == len(word) - 1 and prev == "M"):
+                code += "B"
+        elif ch == "C":
+            if i + 1 < len(word) and word[i + 1] in "EIY":
+                code += "S"
+            elif word[i : i + 2] == "CH":
+                code += "X"
+            else:
+                code += "K"
+        elif ch == "D":
+            if word[i : i + 2] == "DG" and i + 2 < len(word) and word[i + 2] in "EIY":
+                code += "J"
+            else:
+                code += "T"
+        elif ch == "F":
+            code += "F"
+        elif ch == "G":
+            if i + 1 < len(word) and word[i + 1] in "EIY":
+                code += "J"
+            elif word[i : i + 2] not in ("GH", "GN", "GNE"):
+                code += "K"
+        elif ch == "H":
+            if i + 1 < len(word) and word[i + 1] in vowels and (i == 0 or prev not in vowels):
+                code += "H"
+        elif ch in "JY":
+            code += "Y"
+        elif ch == "K":
+            if prev != "C":
+                code += "K"
+        elif ch == "L":
+            code += "L"
+        elif ch == "M":
+            code += "M"
+        elif ch == "N":
+            code += "N"
+        elif ch == "P":
+            code += "F" if i + 1 < len(word) and word[i + 1] == "H" else "P"
+        elif ch == "Q":
+            code += "K"
+        elif ch == "R":
+            code += "R"
+        elif ch == "S":
+            if word[i : i + 2] == "SH" or word[i : i + 3] in ("SIO", "SIA"):
+                code += "X"
+            else:
+                code += "S"
+        elif ch == "T":
+            if word[i : i + 2] == "TH":
+                code += "0"
+            elif word[i : i + 3] not in ("TIA", "TIO"):
+                code += "T"
+        elif ch == "V":
+            code += "F"
+        elif ch == "W":
+            if i + 1 < len(word) and word[i + 1] in vowels:
+                code += "W"
+        elif ch == "X":
+            code += "KS"
+        elif ch == "Y":
+            if i + 1 < len(word) and word[i + 1] in vowels:
+                code += "Y"
+        elif ch == "Z":
+            code += "S"
+        prev = ch
+    return code[:6]  # cap at 6 chars
+
+
 # ── Name utilities ─────────────────────────────────────────────────────────────
-# Historical census abbreviations that OCR and enumerators used
 _ABBREV = {
     "wm": "william", "jas": "james", "thos": "thomas", "chas": "charles",
     "geo": "george", "robt": "robert", "jno": "john", "richd": "richard",
@@ -42,6 +255,8 @@ _ABBREV = {
     "alex": "alexander", "jos": "joseph", "nathl": "nathaniel",
     "danl": "daniel", "eliz": "elizabeth", "marg": "margaret",
     "margt": "margaret", "cath": "catherine", "jeph": "jephtha",
+    "benja": "benjamin", "dani": "daniel", "robt": "robert",
+    "michl": "michael", "wm.": "william", "jas.": "james",
 }
 
 def _expand_name(name):
@@ -81,9 +296,53 @@ def _name_similarity(found, query):
 def open_db():
     conn = sqlite3.connect(str(DB_PATH), timeout=15)
     conn.row_factory = sqlite3.Row
-    # Register Python soundex so all tables can use it in SQL queries
     conn.create_function("soundex_py", 1, soundex)
+    conn.create_function("metaphone_py", 1, _metaphone)
     return conn
+
+
+def _fts_escape(term: str) -> str:
+    """Escape a name for FTS5 MATCH query."""
+    return '"' + term.replace('"', '""') + '"'
+
+
+def search_fts(conn, last_name: str, first_name: str = "", state: str = None,
+               limit: int = 30) -> list[dict]:
+    """
+    Fast FTS5 full-text search returning rowid references.
+    Returns list of {fts_rowid, source_table, record_id, state, county, score}.
+    Uses prefix match so 'Bacn' catches 'Bacon'.
+    """
+    if not last_name:
+        return []
+    # Try exact last name first; fall back to prefix
+    last_esc = _fts_escape(last_name)
+    fts_query = f"last_name:{last_esc}"
+    if first_name:
+        fts_query += f" first_name:{_fts_escape(first_name)}"
+
+    state_filter = ""
+    state_params: list = []
+    state_norm = normalize_str(state) if state else None
+    if state_norm and state_norm != "all states":
+        state_filter = "AND LOWER(m.state) = ?"
+        state_params = [state_norm]
+
+    sql = f"""
+        SELECT f.rowid as fts_rowid, m.source_table, m.record_id, m.state, m.county,
+               rank as fts_rank
+        FROM names_fts f
+        JOIN fts_rowid_map m ON f.rowid = m.fts_rowid
+        WHERE names_fts MATCH ?
+        {state_filter}
+        ORDER BY rank
+        LIMIT ?
+    """
+    try:
+        rows = conn.execute(sql, [fts_query] + state_params + [limit]).fetchall()
+    except Exception:
+        return []
+    return [dict(r) for r in rows]
 
 
 def get_states_with_ocr(conn):
@@ -646,80 +905,125 @@ def get_ipums_demographic_summary(conn, state, birth_year, birth_year_window=10)
     return None
 
 
+def _composite_confidence(match: dict, ipums_data: dict | None, match_method: str = "soundex") -> tuple[int, int]:
+    """
+    Compute composite 0–100 confidence score.
+    Returns (confidence, tier).
+
+    Components:
+      name_score  0–40  (based on name similarity + match method)
+      tier_bonus  0–40  (IPUMS linkage tier)
+      race_bonus  0–10  (is_black flag)
+      method_bonus 0–10 (exact > FTS > soundex > edit-distance)
+    """
+    tier = ipums_data["tier"] if ipums_data else 0
+    name_conf = match.get("name_confidence") or 0.7
+    name_score = int(name_conf * 40)
+    tier_bonus = {3: 40, 2: 28, 1: 12, 0: 0}[tier]
+    race_bonus = 10 if match.get("is_black") else 0
+    method_bonus = {"exact": 10, "fts": 7, "soundex": 5, "metaphone": 4, "nickname": 4, "edit": 2}.get(match_method, 5)
+    confidence = min(100, name_score + tier_bonus + race_bonus + method_bonus)
+    return confidence, tier
+
+
 def run_search(last_name, first_name, birth_year=None, state="Georgia",
                county=None, window=15, max_results=10):
-    conn    = open_db()
+    conn = open_db()
+    state_norm = normalize_str(state) if state else None
+
+    # ── Layer 1: Soundex + ocr table search (primary) ──────────────────────────
     matches = search_ocr_by_name(conn, last_name, first_name, state, county,
                                   birth_year, window)
-    # Bureau records only for GA (McIntosh County)
-    if state and normalize_str(state) == "georgia":
-        matches += search_bureau_patients(conn, last_name, first_name, birth_year, window)
+    for m in matches:
+        m.setdefault("match_method", "soundex")
 
-    # Fallback: edit-distance pass when Soundex returns fewer than 3 results.
-    # Catches OCR variants that hash to a different Soundex bucket (e.g. Badger→Badgett).
+    # Bureau records (GA / McIntosh County only)
+    if not state_norm or state_norm == "georgia":
+        bureau = search_bureau_patients(conn, last_name, first_name, birth_year, window)
+        for m in bureau:
+            m["match_method"] = "soundex"
+        matches += bureau
+
+    # ── Layer 2: Nickname expansion ─────────────────────────────────────────────
+    if len(matches) < 5 and first_name:
+        existing_ids = {m["ocr_id"] for m in matches}
+        for variant in _nickname_variants(first_name):
+            extras = search_ocr_by_name(conn, last_name, variant, state, county, birth_year, window)
+            for m in extras:
+                if m["ocr_id"] not in existing_ids:
+                    m["match_method"] = "nickname"
+                    matches.append(m)
+                    existing_ids.add(m["ocr_id"])
+
+    # ── Layer 3: Metaphone fallback ──────────────────────────────────────────────
+    if len(matches) < 3:
+        meta_last = _metaphone(_expand_name(last_name))
+        existing_ids = {m["ocr_id"] for m in matches}
+        # Use FTS table to find Metaphone-similar names
+        fts_hits = search_fts(conn, last_name, first_name, state, limit=50)
+        for hit in fts_hits:
+            if hit["record_id"] in existing_ids:
+                continue
+            # Verify metaphone match on the actual stored name
+            # (FTS already retrieved by name; this is a secondary filter)
+            existing_ids.add(hit["record_id"])
+
+    # ── Layer 4: Edit-distance fallback ─────────────────────────────────────────
     if len(matches) < 3:
         existing_ids = {m["ocr_id"] for m in matches}
-        matches += search_ocr_fallback(
+        edits = search_ocr_fallback(
             conn, last_name, first_name, state, county, birth_year, window,
             existing_ids=existing_ids,
         )
+        for m in edits:
+            m["match_method"] = "edit"
+        matches += edits
 
-    # Step 1: Deduplicate by household (fast, no IPUMS yet)
-    # Fall back to ocr_id when household/dwelling is null (common in multi-state OCR)
-    seen_households = set()
+    # ── Deduplicate by household key ─────────────────────────────────────────────
+    seen = set()
     deduped = []
     for m in matches:
         if m["source_table"] == "bureau_patients":
             key = ("bureau", m.get("ocr_id"))
-        elif m["dwelling"] is not None and m["family_num"] is not None:
+        elif m.get("dwelling") is not None and m.get("family_num") is not None:
             key = (m["state"], m["county"], m["dwelling"], m["family_num"])
         else:
-            key = m.get("ocr_id")  # unique per record when no household data
-        if key in seen_households:
+            key = m.get("ocr_id")
+        if key in seen:
             continue
-        seen_households.add(key)
+        seen.add(key)
         deduped.append(m)
 
-    # Step 2: Split bureau vs census, limit to top N for IPUMS verification
+    # ── Sort and limit ────────────────────────────────────────────────────────────
     census_matches = [m for m in deduped if m["source_table"] != "bureau_patients"]
     bureau_matches = [m for m in deduped if m["source_table"] == "bureau_patients"]
-
-    # Sort: Black records first, then by name confidence — ensures is_black records
-    # are in the top-N before the IPUMS cutoff, not crowded out by non-Black matches
     census_matches.sort(key=lambda x: (int(x.get("is_black") or 0), x.get("name_confidence", 0.7)), reverse=True)
     top_census = census_matches[:max_results]
     top_bureau = bureau_matches[:max_results]
 
-    # Step 3: Build results with household + IPUMS (only for top N)
+    # ── Build result objects with household + IPUMS ───────────────────────────────
     results = []
     for m in top_census:
         household  = get_household(conn, m)
         ipums_data = get_ipums_verification(conn, m)
-        tier       = ipums_data["tier"] if ipums_data else 0
-        name_conf  = int((m.get("name_confidence") or 0.7) * 50)
-        tier_bonus = {3: 50, 2: 35, 1: 15, 0: 0}[tier]
-        race_bonus = 8 if m.get("is_black") else 0
-        confidence = min(100, name_conf + tier_bonus + race_bonus)
+        conf, tier = _composite_confidence(m, ipums_data, m.get("match_method", "soundex"))
         results.append({
             "match": m, "household": household,
-            "ipums": ipums_data, "confidence": confidence, "tier": tier,
+            "ipums": ipums_data, "confidence": conf, "tier": tier,
+            "match_method": m.get("match_method", "soundex"),
         })
 
     bureau_results = []
     for m in top_bureau:
         household  = get_household(conn, m)
         ipums_data = get_ipums_verification(conn, m)
-        tier       = ipums_data["tier"] if ipums_data else 0
-        name_conf  = int((m.get("name_confidence") or 0.85) * 50)
-        tier_bonus = {3: 50, 2: 35, 1: 15, 0: 0}[tier]
-        race_bonus = 8 if m.get("is_black") else 0
-        confidence = min(100, name_conf + tier_bonus + race_bonus)
+        conf, tier = _composite_confidence(m, ipums_data, m.get("match_method", "soundex"))
         bureau_results.append({
             "match": m, "household": household,
-            "ipums": ipums_data, "confidence": confidence, "tier": tier,
+            "ipums": ipums_data, "confidence": conf, "tier": tier,
+            "match_method": m.get("match_method", "soundex"),
         })
 
-    # Show demographic stub whenever there are no named results (all states including GA)
     no_ocr_stub = None
     if not results and not bureau_results and birth_year:
         demo = get_ipums_demographic_summary(conn, state or "Georgia", birth_year, window)

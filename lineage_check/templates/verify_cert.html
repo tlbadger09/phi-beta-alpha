@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Certificate Verification{% endblock %}
+{% block content %}
+<div style="max-width:600px; margin:4rem auto; padding:2rem; background:#fff; border:1px solid #ddd; border-radius:8px; text-align:center;">
+  {% if valid %}
+  <div style="font-size:3rem; margin-bottom:1rem;">✓</div>
+  <h2 style="color:#1a6a2a; margin-bottom:.5rem;">Certificate Valid</h2>
+  <p style="color:#555; margin-bottom:2rem;">This Phi Beta Alpha lineage certificate is authentic and has not been revoked.</p>
+  <table style="width:100%; border-collapse:collapse; text-align:left; font-size:.95rem;">
+    <tr>
+      <td style="padding:.5rem 1rem; color:#666; font-weight:600;">Certificate ID</td>
+      <td style="padding:.5rem 1rem; font-family:monospace;">{{ cert.cert_id }}</td>
+    </tr>
+    <tr style="background:#f9f9f9;">
+      <td style="padding:.5rem 1rem; color:#666; font-weight:600;">Issue Date</td>
+      <td style="padding:.5rem 1rem;">{{ cert.issued_date }}</td>
+    </tr>
+    <tr>
+      <td style="padding:.5rem 1rem; color:#666; font-weight:600;">Lineage Origin State</td>
+      <td style="padding:.5rem 1rem;">{{ cert.birth_state or "—" }}</td>
+    </tr>
+    <tr style="background:#f9f9f9;">
+      <td style="padding:.5rem 1rem; color:#666; font-weight:600;">Verified Generations</td>
+      <td style="padding:.5rem 1rem;">{{ cert.verified_gens }}</td>
+    </tr>
+    <tr>
+      <td style="padding:.5rem 1rem; color:#666; font-weight:600;">Issuing Organization</td>
+      <td style="padding:.5rem 1rem;">Phi Beta Alpha Historical Lineage Society, Inc.<br>
+        <small style="color:#888;">EIN 41-4969999 · 501(c)(3) · phibetaalpha.org</small></td>
+    </tr>
+  </table>
+  <p style="margin-top:2rem; font-size:.85rem; color:#888;">
+    Certificate verified {{ now }}. Personal identifying information is not displayed on this page.
+  </p>
+  {% elif valid == false %}
+  <div style="font-size:3rem; margin-bottom:1rem; color:#c00;">✗</div>
+  <h2 style="color:#c00; margin-bottom:.5rem;">Certificate Not Found</h2>
+  <p style="color:#555;">Certificate ID <code>{{ cert_id }}</code> was not found in the ΦΒΑ registry.</p>
+  <p style="color:#888; font-size:.9rem;">This certificate may be invalid, a preview copy, or entered incorrectly. Contact <strong>phibetaalpha.org</strong> for assistance.</p>
+  {% endif %}
+
+  <div style="margin-top:2rem;">
+    <a href="/" style="color:#1a3a8f;">← Return to Lineage Check</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('td').forEach(function(td) {
+  var text = td.textContent;
+  if (text) {
+    var now = new Date().toLocaleString('en-US', {dateStyle:'long', timeStyle:'short'});
+    td.innerHTML = td.innerHTML.replace('{{ now }}', now);
+  }
+});
+</script>
+{% endblock %}
