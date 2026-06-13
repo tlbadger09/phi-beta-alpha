@@ -9,6 +9,109 @@
     </p>
   </div>
 
+  <!-- Coverage map -->
+  <div class="result-card" style="margin-bottom:20px; padding:20px 24px;">
+    <h3 style="font-size:.8rem; text-transform:uppercase; letter-spacing:.07em; color:var(--blue); margin-bottom:14px;">
+      Coverage Map &mdash; Southeastern States
+    </h3>
+    <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;">
+      <svg viewBox="0 0 520 320" style="width:min(100%,520px); height:auto; border:1px solid #eee; border-radius:6px; background:#f8f9fc;" aria-label="Coverage map of southeastern states">
+        <!-- Coverage tiers: complete=#1a3a8f, partial=#c9a84c, pending=#ccc, none=#eee -->
+        <!-- Simplified state outlines for the Southeast -->
+
+        <!-- Kentucky -->
+        <polygon points="120,60 280,60 295,80 280,95 120,95 105,80" fill="#eee" stroke="#999" stroke-width="1"/>
+        <text x="200" y="82" text-anchor="middle" font-size="10" fill="#666">Kentucky</text>
+
+        <!-- Virginia -->
+        <polygon points="290,60 430,45 450,80 430,95 295,95 280,75" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="365" y="73" text-anchor="middle" font-size="10" fill="#333">Virginia</text>
+
+        <!-- North Carolina -->
+        <polygon points="290,100 440,85 460,115 440,130 295,130 280,115" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="370" y="112" text-anchor="middle" font-size="10" fill="#333">N. Carolina</text>
+
+        <!-- Tennessee -->
+        <polygon points="105,100 285,100 280,125 105,125 90,115" fill="#eee" stroke="#999" stroke-width="1"/>
+        <text x="195" y="118" text-anchor="middle" font-size="10" fill="#666">Tennessee</text>
+
+        <!-- South Carolina -->
+        <polygon points="295,135 440,130 455,165 415,195 340,200 295,170" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="370" y="162" text-anchor="middle" font-size="10" fill="#333">S. Carolina</text>
+
+        <!-- Georgia (complete) -->
+        <polygon points="200,170 340,170 345,200 290,255 200,250 185,215" fill="#1a3a8f" stroke="#999" stroke-width="1"/>
+        <text x="265" y="215" text-anchor="middle" font-size="10" fill="white" font-weight="bold">Georgia ✓</text>
+
+        <!-- Alabama -->
+        <polygon points="110,170 200,170 200,255 160,280 105,260 95,215" fill="#1a3a8f" stroke="#999" stroke-width="1"/>
+        <text x="152" y="220" text-anchor="middle" font-size="10" fill="white" font-weight="bold">Alabama ✓</text>
+
+        <!-- Mississippi -->
+        <polygon points="20,170 110,170 108,260 60,285 15,255" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="62" y="220" text-anchor="middle" font-size="9" fill="#333">Mississippi</text>
+
+        <!-- Florida -->
+        <polygon points="160,285 290,258 310,290 290,310 220,315 160,305" fill="#1a3a8f" stroke="#999" stroke-width="1"/>
+        <text x="230" y="295" text-anchor="middle" font-size="10" fill="white" font-weight="bold">Florida ✓</text>
+
+        <!-- Louisiana -->
+        <polygon points="15,260 65,285 60,305 20,300 10,275" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="37" y="285" text-anchor="middle" font-size="8" fill="#333">LA</text>
+
+        <!-- New York (inset) -->
+        <rect x="430" y="10" width="70" height="35" rx="4" fill="#c9a84c" stroke="#999" stroke-width="1"/>
+        <text x="465" y="32" text-anchor="middle" font-size="9" fill="#333">New York</text>
+
+        <!-- Legend -->
+        <rect x="10" y="10" width="12" height="12" fill="#1a3a8f" rx="2"/>
+        <text x="26" y="21" font-size="9" fill="#333">OCR indexed</text>
+        <rect x="10" y="26" width="12" height="12" fill="#c9a84c" rx="2"/>
+        <text x="26" y="37" font-size="9" fill="#333">In pipeline</text>
+        <rect x="10" y="42" width="12" height="12" fill="#eee" stroke="#ccc" stroke-width="1" rx="2"/>
+        <text x="26" y="53" font-size="9" fill="#333">Pending</text>
+      </svg>
+
+      <!-- Per-state count table -->
+      <div style="flex:1; min-width:200px;">
+        <table style="width:100%; border-collapse:collapse; font-size:.82rem;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:5px 8px; border-bottom:2px solid var(--blue); color:var(--blue); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;">State</th>
+              <th style="text-align:right; padding:5px 8px; border-bottom:2px solid var(--blue); color:var(--blue); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;">Records</th>
+              <th style="text-align:right; padding:5px 8px; border-bottom:2px solid var(--blue); color:var(--blue); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;">Black</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:#f0f4ff;">
+              <td style="padding:5px 8px; font-weight:600;">Georgia</td>
+              <td style="padding:5px 8px; text-align:right;">{{ "{:,}".format(ga_count) }}</td>
+              <td style="padding:5px 8px; text-align:right; color:var(--green);">{{ "{:,}".format(ga_black) }}</td>
+            </tr>
+            {% for s in state_status %}
+            {% if s.total_records > 0 %}
+            <tr style="{% if loop.index is odd %}background:#fafafa;{% endif %}">
+              <td style="padding:5px 8px;">{{ s.state }}</td>
+              <td style="padding:5px 8px; text-align:right;">{{ "{:,}".format(s.total_records) }}</td>
+              <td style="padding:5px 8px; text-align:right; color:var(--green);">{{ "{:,}".format(s.black_records) }}</td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+            <tr style="border-top:2px solid var(--blue); font-weight:bold; background:#f0f4ff;">
+              <td style="padding:6px 8px;">Total</td>
+              <td style="padding:6px 8px; text-align:right;">{{ "{:,}".format(ga_count + total_multi_records) }}</td>
+              <td style="padding:6px 8px; text-align:right; color:var(--green);">{{ "{:,}".format(ga_black + total_multi_black) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="font-size:.7rem; color:#888; margin-top:8px;">
+          IPUMS linked records (1870): {{ "{:,}".format(1147958) }} &nbsp;·&nbsp;
+          Freedmen's Bureau patients (GA): 2,511
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- Georgia (complete) -->
   <div class="result-card" style="margin-bottom:16px; border-left:4px solid var(--green);">
     <div class="result-header">
