@@ -99,23 +99,47 @@ ALTER TABLE verification_submissions ADD COLUMN reviewed_at TEXT;
 
 ---
 
+## Continuation session additions (June 12, 2026)
+
+**OCR pipeline infra (WS1):**
+- `scripts/prep_pages.py` — extracts JP2s from NARA ZIPs, converts to JPEG (1600px max), writes resumable `manifest.json` per reel. Tested on reel 1135 (665 pages extracted).
+- `scripts/insert_batch.py` — validates and inserts OCR records with full dedup, age sanity checks, Soundex population. Accepts bare list or `{reel, page, state, records}` envelope.
+- `scripts/rebuild_fts.py` — full FTS5 index rebuild after bulk inserts. `--stats` flag for coverage check without rebuilding (currently 210,485 rows, 15.3% of all source records).
+- `scripts/reset_quota_errors.py` — clears `quota_error` pipeline_progress entries so stalled reels retry. 190 pages waiting across 32 reels.
+- `multi_state_pipeline.py` patched: OpenAI-only (no Anthropic key read from .env), Tesseract local fallback (low accuracy, for emergency use).
+
+**OCR blocker:** Both API providers exhausted (Anthropic: credit balance too low; OpenAI: free tier quota exceeded). 190 page entries need to retry across all non-GA/AL/FL reels. To unblock: add credits to OpenAI account, then `python3 scripts/reset_quota_errors.py && python3 scripts/multi_state_pipeline.py --state "South Carolina" --workers 3`.
+
+**Mobile CSS (WS4 continued):**
+- `explore_county.html`: search form goes full-width + stacks on mobile; padding fixes
+- `submission_status.html`: padding on outer container, label column min-width fix, `word-break:break-all` on reference IDs
+- `style.css`: added `member-grid`, `begin-form-card`, `coverage-map-flex/svg` classes; `@media` block adds certificate page stacking, verify-cert table compaction, admin table font reduction, lineage nav fixes
+- `members.html`: entry header stacks on <640px; action buttons go full-width
+- `lineage.html`: timeline stacks vertically on mobile (year label above card, gold left border replaces connector)
+
+**Lineage timeline enhancements:**
+- Census-year evidence chips: 1870/1880/1900 Linked badges colored by linkage status
+- FamilySearch deep link URL corrected to `/ark!/61903/1:1/` format
+- Member node at bottom shows birth state/county
+
+**Admin auto-suggest display:**
+- `admin_submissions.html`: new "Auto-Suggest" column with color-coded chips (green ≥70, amber ≥40, red <40 confidence)
+- `app.py`: `auto_candidates_parsed` (top 5) populated before template render
+
+**DEPLOY.md updated:** FTS rebuild instructions, quota-error reset workflow, pipeline resume guide.
+
+---
+
 ## What remains
 
-### High priority
-1. **SC death certificate for John House Badger** — closes the Badger chain from Tier-2 to verified. Request from SC DHEC ($12 fee). See `research/badger_chain_report.md`.
-2. **OCR reels 1135, 1136, 1139** — SC Beaufort/Charleston/Colleton, unblocks Sea Islands connections for FBA members
-3. **KY Louisville reel ~503** — exponential-backoff downloader (NARA HTTP 503 intermittent failures)
+### High priority — blocked on API credits
+1. **Add OpenAI API credits** — unblocks 190 stalled pages across all reels. Run `python3 scripts/reset_quota_errors.py && python3 scripts/multi_state_pipeline.py --all --workers 3` to resume. Priority order: SC 1135 (Beaufort) → 1136 (Charleston) → 1139 (Colleton) → NC → MS → LA → VA → NY.
+2. **SC death certificate for John House Badger** — closes the Badger chain. Request from SC DHEC ($12). See `research/badger_chain_report.md`.
 
-### Medium priority
-4. **Mobile-responsive CSS pass** — every public page; especially search results on narrow screens
-5. **Lineage timeline enhancements** — generation gap labels, census-year evidence badges, FamilySearch deep links inline
-6. **Admin auto-suggest display** — parse and show `auto_candidates` JSON in `admin_submissions.html`
-7. **prep_pages.py + insert_batch.py** — JP2 extraction, normalization/deskew/crop, dedup-safe batch insert
-
-### Lower priority
-8. **MS/NC/LA reels** — next OCR batch after SC
-9. **Workstream 1 OCR loop** — in-session transcription (read JP2s, write structured records)
-10. **`/status` auto-refresh** — currently polls `/api/pipeline-progress`; could add WebSocket
+### Medium priority — no API needed
+3. **FTS5 rebuild after new OCR records** — run `python3 scripts/rebuild_fts.py` after any bulk insert
+4. **KY Louisville reel 408** — has quota_errors; will auto-retry once credits restored. The downloader handles the ZIP fine; the issue was OCR, not download.
+5. **preview_cert.html mobile** — certificate preview page has heavy inline styles; check on small screens
 
 ---
 

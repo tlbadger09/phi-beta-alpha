@@ -2,7 +2,7 @@
 {% block title %}Submission Status{% endblock %}
 
 {% block content %}
-<div style="max-width:600px; margin:32px auto 0;">
+<div style="max-width:600px; margin:24px auto 0; padding:0 12px;">
   <a href="/" class="back-link">&#8592; Back to Search</a>
 
   {% if not_found %}
@@ -68,7 +68,7 @@
       {% endif %}
 
       <table style="width:100%; font-size:0.82rem; border-collapse:collapse; margin-top:8px;">
-        <tr><td style="padding:5px 0; color:#888; width:160px;">Reference #</td><td><strong style="font-family:monospace;">{{ submission.submission_id }}</strong></td></tr>
+        <tr><td style="padding:5px 0; color:#888; width:120px; min-width:90px;">Reference #</td><td><strong style="font-family:monospace; word-break:break-all;">{{ submission.submission_id }}</strong></td></tr>
         <tr><td style="padding:5px 0; color:#888;">Submitted</td><td>{{ submission.submitted_at[:10] if submission.submitted_at else '—' }}</td></tr>
         <tr><td style="padding:5px 0; color:#888;">Your name</td><td>{{ submission.member_name }}</td></tr>
         <tr><td style="padding:5px 0; color:#888;">Ancestor</td><td>{{ submission.anc_first }} {{ submission.anc_last }}{% if submission.anc_year %}, ~{{ submission.anc_year }}{% endif %}</td></tr>

@@ -82,13 +82,13 @@
     <p style="font-size:0.85rem; color:#888; margin-bottom:12px;">
       Don't see the surname you're looking for? Search the full database:
     </p>
-    <form action="/search" method="POST" style="display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+    <form action="/search" method="POST" class="county-search-form">
       <input type="text" name="last_name" placeholder="Surname" required
-             style="padding:10px 14px; border:1px solid #ccc; border-radius:4px; font-size:0.95rem; font-family:inherit; width:180px;">
+             class="county-search-input">
       <input type="hidden" name="state"  value="{{ state }}">
       <input type="hidden" name="county" value="{{ county }}">
       <input type="hidden" name="window" value="20">
-      <button type="submit" class="btn-search" style="grid-column:auto; padding:10px 20px; font-size:0.9rem;">
+      <button type="submit" class="btn-search" style="grid-column:auto; padding:10px 20px; font-size:0.9rem; flex-shrink:0;">
         Search {{ county }} County
       </button>
     </form>
@@ -127,5 +127,17 @@
 .surname-btn:hover .sn-count { color:rgba(255,255,255,0.7); }
 .sn-name  { font-weight:bold; color:var(--blue); font-size:0.9rem; }
 .sn-count { font-size:0.72rem; color:#888; margin-top:2px; }
+
+/* Bottom search form — full width on mobile */
+.county-search-form { display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+.county-search-input { padding:10px 14px; border:1px solid #ccc; border-radius:4px;
+                       font-size:0.95rem; font-family:inherit; width:180px; }
+
+@media (max-width:640px) {
+  .explore-section { padding:16px; }
+  .county-search-form { width:100%; flex-direction:column; }
+  .county-search-input { width:100%; }
+  .county-search-form .btn-search { width:100%; }
+}
 </style>
 {% endblock %}

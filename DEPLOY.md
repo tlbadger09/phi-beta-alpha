@@ -79,21 +79,32 @@ occasionally returns 503 on high-traffic reels. Retry with 2s→4s→8s→16s de
 
 ## FTS5 index
 
-The `names_fts` FTS5 table is populated from all three OCR tables + IPUMS.
-If the DB is restored from backup, the FTS table is included automatically
-(it's stored in the same SQLite file). To rebuild from scratch:
+The `names_fts` FTS5 table covers census_ocr_georgia_1870 + census_ocr_1870.
+After adding new OCR records, rebuild the index:
 
 ```bash
-python3 - <<'EOF'
-import sqlite3, sys
-sys.path.insert(0, 'lineage_check')
-conn = sqlite3.connect('processed/lineage_1870.db')
-conn.execute("DELETE FROM names_fts")
-conn.execute("DELETE FROM fts_rowid_map")
-# Re-run the FTS population logic from the build session
-conn.commit()
-EOF
+python3 scripts/rebuild_fts.py          # full rebuild (~30s)
+python3 scripts/rebuild_fts.py --stats  # show coverage without rebuilding
 ```
+
+## Resuming after API quota exhaustion
+
+The OCR pipeline saves progress per page. When API credits are restored:
+
+```bash
+# Show how many pages are waiting to retry
+python3 scripts/reset_quota_errors.py --dry-run
+
+# Clear quota_error flags so the pipeline retries them
+python3 scripts/reset_quota_errors.py
+
+# Then resume the pipeline (processed pages are automatically skipped)
+source ~/.zshrc && python3 scripts/multi_state_pipeline.py --reel 1135 --state "South Carolina" --workers 3
+```
+
+The pipeline uses OpenAI GPT-4o only (Anthropic key present in .env has no credits).
+To switch back to Anthropic when credits are restored, edit `get_ai_client()` in
+`scripts/multi_state_pipeline.py`.
 
 ## Admin panel
 
