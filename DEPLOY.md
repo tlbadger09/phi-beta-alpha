@@ -6,7 +6,7 @@
 |----------|----------|-------------|
 | `ADMIN_PASSWORD` | Yes (prod) | Admin login password. If unset, admin is open (dev only). |
 | `FLASK_SECRET_KEY` | Yes (prod) | Session signing key. Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `ANTHROPIC_API_KEY` | No | Only needed for OCR pipeline (scripts/census_ocr.py). Not used by the web app. |
+| `ANTHROPIC_API_KEY` | No | Not used by the pipeline or web app (pipeline uses Tesseract/in-session). |
 | `OPENAI_API_KEY` | No | Optional — only if clawdbot or embedding tools are active. |
 
 Set these in `lineage_check/.env`:
@@ -87,24 +87,38 @@ python3 scripts/rebuild_fts.py          # full rebuild (~30s)
 python3 scripts/rebuild_fts.py --stats  # show coverage without rebuilding
 ```
 
-## Resuming after API quota exhaustion
+## OCR providers
 
-The OCR pipeline saves progress per page. When API credits are restored:
+The pipeline has two zero-cost OCR modes (no API key required):
 
+**Tesseract (default)** — local OCR, runs immediately, low accuracy on 19th-century cursive:
 ```bash
-# Show how many pages are waiting to retry
-python3 scripts/reset_quota_errors.py --dry-run
-
-# Clear quota_error flags so the pipeline retries them
-python3 scripts/reset_quota_errors.py
-
-# Then resume the pipeline (processed pages are automatically skipped)
-source ~/.zshrc && python3 scripts/multi_state_pipeline.py --reel 1135 --state "South Carolina" --workers 3
+python3 scripts/multi_state_pipeline.py --reel 1147 --state "South Carolina" --workers 2
 ```
 
-The pipeline uses OpenAI GPT-4o only (Anthropic key present in .env has no credits).
-To switch back to Anthropic when credits are restored, edit `get_ai_client()` in
-`scripts/multi_state_pipeline.py`.
+**In-session** — Claude Code reads each page image and transcribes rows into a JSON sidecar:
+```bash
+# Step 1: pipeline saves page JPEGs to output/insession_staging/<reel>/ and marks pages pending
+python3 scripts/multi_state_pipeline.py --reel 1135 --state "South Carolina" --provider insession
+
+# Step 2: In Claude Code session, read each image and write <page>.json sidecar
+# (Claude Code uses the Read tool to view the JPEG and outputs a JSON records array)
+
+# Step 3: Re-run — pipeline picks up sidecars and inserts records
+python3 scripts/multi_state_pipeline.py --reel 1135 --state "South Carolina" --provider insession
+```
+
+**Resuming stalled pages:**
+```bash
+# Show pages waiting to retry (quota_error status)
+python3 scripts/reset_quota_errors.py --dry-run
+
+# Clear those flags
+python3 scripts/reset_quota_errors.py --reel 1135
+
+# Re-run the pipeline (completed pages are automatically skipped)
+python3 scripts/multi_state_pipeline.py --reel 1135 --state "South Carolina" --workers 2
+```
 
 ## Admin panel
 
@@ -127,6 +141,6 @@ number of verified generations.
 - [ ] `ADMIN_PASSWORD` set in env
 - [ ] `FLASK_SECRET_KEY` set to a random 32+ byte hex string
 - [ ] HTTPS configured (reverse proxy with TLS)
-- [ ] `ANTHROPIC_API_KEY` NOT in `.env` (web app doesn't need it)
+- [ ] `ANTHROPIC_API_KEY` NOT in `.env` (neither web app nor pipeline needs it)
 - [ ] `processed/backups/` not web-accessible
 - [ ] `nara_microfilm/` not web-accessible

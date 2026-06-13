@@ -2,8 +2,10 @@
 """
 Phi Beta Alpha — Multi-State 1870 Census OCR Pipeline
 
-Downloads Internet Archive M593 microfilm reels for target states,
-OCRs them with GPT-4o Vision, and saves named records to census_ocr_1870.
+Downloads Internet Archive M593 microfilm reels for target states and OCRs
+them locally with Tesseract (zero API cost). Supports an optional in-session
+mode where Claude reads each page image directly and writes a JSON sidecar
+that the pipeline then ingests.
 
 NARA M593 (1870 Population Schedules) reel ranges:
   Alabama:        1-45       Florida:       120-125
@@ -16,6 +18,7 @@ Usage:
   python3 multi_state_pipeline.py --state "South Carolina" [--workers 4]
   python3 multi_state_pipeline.py --all [--workers 4]
   python3 multi_state_pipeline.py --reel 1147 --state "South Carolina"
+  python3 multi_state_pipeline.py --reel 1147 --state "South Carolina" --provider insession
 """
 
 import os
@@ -23,7 +26,6 @@ import re
 import sys
 import json
 import time
-import base64
 import sqlite3
 import hashlib
 import zipfile
@@ -45,56 +47,11 @@ SSL_CTX.verify_mode = ssl.CERT_NONE
 from PIL import Image
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-DB_PATH   = Path.home() / "Documents/phi-beta-alpha/processed/lineage_1870.db"
-CACHE_DIR = Path.home() / "Documents/phi-beta-alpha/output/multi_state_reels"
+DB_PATH      = Path.home() / "Documents/phi-beta-alpha/processed/lineage_1870.db"
+CACHE_DIR    = Path.home() / "Documents/phi-beta-alpha/output/multi_state_reels"
+STAGING_DIR  = Path.home() / "Documents/phi-beta-alpha/output/insession_staging"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── AI client setup (Claude primary, OpenAI fallback) ─────────────────────────
-def _read_key_from_file(varname, filepath):
-    p = Path(filepath)
-    if p.exists():
-        for line in p.read_text().splitlines():
-            if varname in line and "=" in line and not line.strip().startswith("#"):
-                key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                if key and not key.startswith("$"):
-                    return key
-    return None
-
-
-def _find_key(varname):
-    return (
-        os.environ.get(varname)
-        or _read_key_from_file(varname, Path(__file__).parent.parent / ".env")
-        or _read_key_from_file(varname, Path.home() / ".zshrc")
-    )
-
-
-def get_claude_client():
-    """Return Anthropic client. Raises if key not found."""
-    import anthropic
-    api_key = _find_key("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not found")
-    return anthropic.Anthropic(api_key=api_key)
-
-
-def get_openai_client():
-    import openai
-    api_key = _find_key("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not found")
-    return openai.OpenAI(api_key=api_key)
-
-
-def get_ai_client():
-    """Return (client, provider). Uses OpenAI GPT-4o — Anthropic credits exhausted."""
-    try:
-        client = get_openai_client()
-        return client, "openai"
-    except Exception:
-        pass
-    raise RuntimeError("OPENAI_API_KEY not found — set it in ~/.zshrc or environment")
-
+STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── State FIPS ─────────────────────────────────────────────────────────────────
 STATE_FIPS = {
@@ -194,8 +151,7 @@ REEL_CATALOG = {
     ],
 }
 
-
-# ── OCR Prompt (same as census_ocr.py) ────────────────────────────────────────
+# OCR_PROMPT kept as reference for in-session transcription instructions
 OCR_PROMPT = """You are an expert genealogist transcribing a handwritten US Federal Census page from 1870.
 
 Extract EVERY person listed. Output a JSON array, each element:
@@ -272,7 +228,6 @@ def download_reel_zip(reel_num: int, state: str) -> Path | None:
         else:
             err = result.stderr.strip()
             print(f"  [Reel {reel_num}] curl failed (rc={result.returncode}): {err}")
-            # Check for 404 (reel doesn't exist on IA)
             if "404" in err or (cache_path.exists() and cache_path.stat().st_size < 1000):
                 print(f"  [Reel {reel_num}] Not found on Internet Archive — skipping")
                 if cache_path.exists():
@@ -307,7 +262,7 @@ def download_reel_zip(reel_num: int, state: str) -> Path | None:
 
 
 def jp2_to_jpeg_bytes(jp2_data: bytes) -> bytes | None:
-    """Convert JP2 bytes to JPEG bytes for OCR. 1600px max keeps text legible at ~1/6 the token cost of 4096px."""
+    """Convert JP2 bytes to JPEG bytes. 1600px max keeps text legible."""
     try:
         img = Image.open(io.BytesIO(jp2_data))
         max_dim = 1600
@@ -322,127 +277,159 @@ def jp2_to_jpeg_bytes(jp2_data: bytes) -> bytes | None:
         return None
 
 
-def ocr_page_claude(client, jpeg_bytes: bytes) -> list[dict] | None:
-    """OCR via Claude. Returns None on quota/credit errors, [] on blank page, list on success."""
-    import anthropic
-    b64 = base64.b64encode(jpeg_bytes).decode()
-    try:
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=8000,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": b64,
-                        },
-                    },
-                    {"type": "text", "text": OCR_PROMPT},
-                ],
-            }],
-        )
-        raw = resp.content[0].text.strip()
-        return parse_ocr_response(raw)
-    except Exception as e:
-        err = str(e).lower()
-        if "credit" in err or "quota" in err or "balance" in err or "billing" in err:
-            print(f"    OCR quota/credit error (Claude): {e}")
-            return None  # None signals quota error — stop retrying
-        print(f"    OCR error (Claude): {e}")
-        return []
-
-
-def ocr_page_openai(client, jpeg_bytes: bytes) -> list[dict] | None:
-    """OCR via OpenAI GPT-4o. Returns None on quota errors, [] on blank, list on success."""
-    b64 = base64.b64encode(jpeg_bytes).decode()
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": OCR_PROMPT},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/jpeg;base64,{b64}",
-                        "detail": "high",
-                    }},
-                ],
-            }],
-            max_tokens=16000,
-            temperature=0,
-        )
-        raw = resp.choices[0].message.content.strip()
-        return parse_ocr_response(raw)
-    except Exception as e:
-        err = str(e).lower()
-        if "quota" in err or "insufficient" in err or "billing" in err or "429" in str(e):
-            print(f"    OCR quota error (OpenAI): {e}")
-            return None
-        print(f"    OCR error (OpenAI): {e}")
-        return []
+def _preprocess_for_tesseract(img: Image.Image) -> Image.Image:
+    """Grayscale + contrast boost for better Tesseract reads on census documents."""
+    from PIL import ImageEnhance, ImageFilter
+    if img.mode != "L":
+        img = img.convert("L")
+    img = ImageEnhance.Contrast(img).enhance(1.8)
+    img = img.filter(ImageFilter.SHARPEN)
+    return img
 
 
 def ocr_page_tesseract(jpeg_bytes: bytes) -> list[dict]:
     """
-    Local Tesseract OCR fallback — low accuracy on handwriting but zero API cost.
-    Extracts whatever text Tesseract can read and returns minimal record dicts.
-    Only used when API providers are exhausted.
+    Primary OCR engine — Tesseract local, zero API cost.
+
+    Uses word-level bounding boxes (image_to_data) to group words by line,
+    then applies census-layout heuristics to extract name / age / sex / color.
+    Accuracy on 19th-century cursive is low but sufficient for bulk indexing.
     """
     try:
         import pytesseract
+
         img = Image.open(io.BytesIO(jpeg_bytes))
-        # --psm 6: assume uniform block of text; oem 3: default LSTM engine
-        text = pytesseract.image_to_string(img, config="--psm 6 --oem 3")
-        lines = [l.strip() for l in text.splitlines() if l.strip() and len(l.strip()) > 3]
-        if not lines:
-            return []
-        # Very basic heuristic: try to extract name-like tokens from each line
+        img = _preprocess_for_tesseract(img)
+
+        data = pytesseract.image_to_data(
+            img,
+            config="--psm 6 --oem 3",
+            output_type=pytesseract.Output.DICT,
+        )
+
+        # Group words by Tesseract line_num, sorted by x position
+        lines: dict[int, list[tuple[int, str, int]]] = {}
+        for i, text in enumerate(data["text"]):
+            word = text.strip()
+            conf = int(data["conf"][i])
+            if not word or conf < 0:
+                continue
+            ln = data["line_num"][i]
+            x = data["left"][i] + data["width"][i] // 2
+            lines.setdefault(ln, []).append((x, word, conf))
+
+        COLOR_VALS = {"B", "W", "M", "C", "I"}
+        SEX_VALS   = {"M", "F"}
+        HEADER_KW  = {"name", "age", "sex", "color", "race", "dwelling", "family",
+                      "occupation", "birthplace", "schedule"}
+
         records = []
-        for i, line in enumerate(lines[:60]):  # cap at 60 lines per page
-            tokens = line.split()
-            if len(tokens) < 2:
+        for ln_num in sorted(lines.keys()):
+            words = sorted(lines[ln_num], key=lambda t: t[0])
+            text_list = [w for _, w, _ in words]
+
+            # Skip column-header and likely-footer lines
+            lower = [w.lower() for w in text_list]
+            if sum(1 for w in lower if w in HEADER_KW) >= 2:
                 continue
-            # Skip lines that look like column headers or page numbers
-            if any(t.lower() in ("name", "age", "sex", "color", "dwelling", "family", "the", "and", "of", "in") for t in tokens[:2]):
+            if len(text_list) < 2:
                 continue
-            # Guess: first two tokens may be last/first name if they start with uppercase
-            if tokens[0][0].isupper() and tokens[1][0].isupper():
-                records.append({
-                    "line_num": i + 1,
-                    "last_name": tokens[0].rstrip(","),
-                    "first_name": tokens[1].rstrip(","),
-                    "age": None, "sex": "", "color": "",
-                    "occupation": "", "birthplace": "",
-                    "_source": "tesseract",
-                })
-        return records
+
+            # Color field: first single uppercase letter in COLOR_VALS
+            color = next(
+                (w.upper() for _, w, _ in words if w.upper() in COLOR_VALS and len(w) == 1),
+                "",
+            )
+
+            # Sex field: first single uppercase M or F not already claimed by color
+            sex = next(
+                (w.upper() for _, w, _ in words
+                 if w.upper() in SEX_VALS and len(w) == 1 and w.upper() != color),
+                "",
+            )
+
+            # Age: first number in [1, 120]
+            age = None
+            for _, w, _ in words:
+                if w.isdigit() and 1 <= int(w) <= 120:
+                    age = int(w)
+                    break
+
+            # Name: leftmost 1-3 capitalized alphabetic tokens
+            name_words = []
+            for _, w, _ in words:
+                if w and w[0].isupper() and w.isalpha() and len(w) > 1:
+                    name_words.append(w.rstrip(","))
+                if len(name_words) >= 3:
+                    break
+
+            if not name_words:
+                continue
+            last_name  = name_words[0]
+            first_name = name_words[1] if len(name_words) > 1 else ""
+
+            records.append({
+                "line_num":   ln_num,
+                "last_name":  last_name,
+                "first_name": first_name,
+                "age":        age,
+                "sex":        sex,
+                "color":      color,
+                "occupation": "",
+                "birthplace": "",
+                "_source":    "tesseract",
+            })
+
+        return records[:80]  # 1870 census pages have at most ~55 rows
+
     except ImportError:
+        print("    pytesseract not installed — run: pip3 install pytesseract")
         return []
     except Exception as e:
         print(f"    Tesseract error: {e}")
         return []
 
 
-def ocr_page(client, jpeg_bytes: bytes, county: str, state: str,
-             provider: str = "openai") -> list[dict]:
-    """Run OCR on a single census page image. Falls back to Tesseract if API quota exceeded."""
-    if provider == "claude":
-        result = ocr_page_claude(client, jpeg_bytes)
-    else:
-        result = ocr_page_openai(client, jpeg_bytes)
+def ocr_page_insession(page_path: Path) -> list[dict]:
+    """
+    In-session OCR: read a JSON sidecar written by Claude Code.
 
-    # None = API quota exhausted. Try Tesseract as last-resort fallback.
-    if result is None:
-        print("    Falling back to Tesseract (low accuracy — API credits needed for full quality)")
-        tess = ocr_page_tesseract(jpeg_bytes)
-        if tess:
-            return tess
-        return None  # Signal quota error upstream so pipeline stops after retries
-    return result
+    Workflow:
+      1. Run pipeline with --provider insession — it saves each page JPEG to
+         output/insession_staging/<reel>/ and marks it "insession_pending".
+      2. Claude Code reads each image with the Read tool and transcribes rows,
+         then writes <page>.json next to the JPEG (format: JSON array of records).
+      3. Re-run pipeline with --provider insession — it picks up the sidecars
+         and inserts the records.
+
+    Returns [] if no sidecar exists yet (page stays pending).
+    """
+    sidecar = page_path.with_suffix(".json")
+    if not sidecar.exists():
+        return []
+    try:
+        data = json.loads(sidecar.read_text())
+        if isinstance(data, list):
+            return data
+    except Exception as e:
+        print(f"    Sidecar read error ({sidecar.name}): {e}")
+    return []
+
+
+def ocr_page(jpeg_bytes: bytes, provider: str = "tesseract",
+             page_path: Path | None = None) -> list[dict] | None:
+    """
+    Dispatch OCR to the chosen provider. Returns record list (possibly empty).
+    Never calls any external API — Tesseract is local, insession reads sidecars.
+    Returns None only on internal error (treat as transient, not quota).
+    """
+    if provider == "insession":
+        if page_path is None:
+            print("    insession mode requires page_path")
+            return []
+        return ocr_page_insession(page_path)
+    # Default: tesseract
+    return ocr_page_tesseract(jpeg_bytes)
 
 
 def parse_ocr_response(raw: str) -> list[dict]:
@@ -457,7 +444,6 @@ def parse_ocr_response(raw: str) -> list[dict]:
                 return data[key]
         return []
     except json.JSONDecodeError:
-        # Try to recover truncated response
         brace_depth = 0
         last_complete = 0
         in_string = False
@@ -490,47 +476,6 @@ def parse_ocr_response(raw: str) -> list[dict]:
         return []
 
 
-def detect_county_from_page(client, jpeg_bytes: bytes, provider: str = "claude") -> str | None:
-    """Quick scan to detect county/state from census page header."""
-    b64 = base64.b64encode(jpeg_bytes).decode()
-    COUNTY_PROMPT = (
-        "This is a US 1870 census page. "
-        "What county and state are printed at the top of the page? "
-        "Reply with ONLY: County: X, State: Y"
-    )
-    try:
-        if provider == "claude":
-            resp = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=50,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64", "media_type": "image/jpeg", "data": b64
-                        }},
-                        {"type": "text", "text": COUNTY_PROMPT},
-                    ],
-                }],
-            )
-            return resp.content[0].text.strip()
-        else:
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                        {"type": "text", "text": COUNTY_PROMPT},
-                    ],
-                }],
-                max_tokens=50, temperature=0,
-            )
-            return resp.choices[0].message.content.strip()
-    except Exception:
-        return None
-
-
 def save_records_to_db(records: list[dict], state: str, county: str,
                         reel_num: int, page_num: int) -> tuple[int, int]:
     """Save OCR records to census_ocr_1870 table. Returns (total, black)."""
@@ -551,7 +496,7 @@ def save_records_to_db(records: list[dict], state: str, county: str,
             continue
 
         color = (rec.get("color") or "").upper().strip()
-        is_black = 1 if color in ("B", "M") else 0  # Black + Mulatto
+        is_black = 1 if color in ("B", "M") else 0
 
         last_sdx  = soundex(last_name) if last_name else None
         first_sdx = soundex(first_name) if first_name else None
@@ -593,7 +538,7 @@ def save_records_to_db(records: list[dict], state: str, county: str,
 
 
 def is_page_already_processed(reel_num: int, page_num: int) -> bool:
-    """Check if this page has been successfully OCR'd (success or blank, not quota_error)."""
+    """Return True if this page should be skipped (success / blank / error)."""
     conn = sqlite3.connect(str(DB_PATH), timeout=10)
     row = conn.execute(
         "SELECT status FROM pipeline_progress WHERE reel_number=? AND page_number=?",
@@ -602,13 +547,11 @@ def is_page_already_processed(reel_num: int, page_num: int) -> bool:
     conn.close()
     if row is None:
         return False
-    # Re-process pages that got quota errors; skip successful and blank pages
     return row[0] in ("success", "blank", "error")
 
 
 def mark_page_progress(reel_num: int, page_num: int, state: str, county: str,
                        status: str, records: int = 0) -> None:
-    """Record page processing status in pipeline_progress."""
     ts = datetime.datetime.now().isoformat()
     conn = sqlite3.connect(str(DB_PATH), timeout=10)
     conn.execute("""
@@ -622,29 +565,24 @@ def mark_page_progress(reel_num: int, page_num: int, state: str, county: str,
 
 
 def process_reel(reel_num: int, state: str, county_desc: str,
-                 workers: int = 2, max_pages: int = None) -> dict:
-    """
-    Download and process one reel. Returns summary dict.
-    """
+                 workers: int = 2, max_pages: int = None,
+                 provider: str = "tesseract") -> dict:
+    """Download and process one reel. Returns summary dict."""
     print(f"\n{'='*60}")
     print(f"PROCESSING: {state} — Reel {reel_num} ({county_desc})")
+    print(f"Provider: {provider}")
     print(f"{'='*60}")
 
     zip_path = download_reel_zip(reel_num, state)
     if not zip_path:
         return {"reel": reel_num, "state": state, "error": "download failed", "total": 0, "black": 0}
 
-    client, provider = get_ai_client()
-    print(f"  Using AI provider: {provider}")
-
-    # Get page list from ZIP
     try:
         zf = zipfile.ZipFile(zip_path)
     except zipfile.BadZipFile as e:
         print(f"  Bad ZIP file: {e}")
         return {"reel": reel_num, "state": state, "error": str(e), "total": 0, "black": 0}
 
-    item_id  = f"populationschedu{reel_num:04d}unit"
     jp2_files = sorted([
         n for n in zf.namelist()
         if n.endswith('.jp2') and not n.endswith('_thumb.jp2')
@@ -656,28 +594,30 @@ def process_reel(reel_num: int, state: str, county_desc: str,
     total_pages = len(jp2_files)
     print(f"  Pages in reel: {total_pages}")
 
-    total_records = 0
-    black_records = 0
+    # Staging directory for in-session mode
+    stage_dir = STAGING_DIR / str(reel_num)
+    if provider == "insession":
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+    total_records  = 0
+    black_records  = 0
     processed_pages = 0
-    skipped_pages = 0
-    quota_errors = 0
+    skipped_pages  = 0
+    pending_pages  = 0  # in-session: pages saved but no sidecar yet
 
-    # Detect the actual county from the first readable page header
-    detected_county = county_desc.split("(")[0].split("-")[0].strip()
-    current_county  = detected_county
-
+    # Use first part of county_desc as working county name
+    current_county = county_desc.split("(")[0].split("-")[0].strip()
     lock = threading.Lock()
 
     def process_page(entry_name: str) -> tuple[int, int, str]:
         """Process one page. Returns (total, black, county)."""
-        # Extract page number from filename
         try:
             page_num = int(entry_name.split("_")[-1].replace(".jp2", ""))
         except (ValueError, IndexError):
             return 0, 0, ""
 
         if is_page_already_processed(reel_num, page_num):
-            return -1, -1, ""  # -1 signals "skipped"
+            return -1, -1, ""  # -1 = skipped
 
         try:
             jp2_data  = zf.read(entry_name)
@@ -688,21 +628,24 @@ def process_reel(reel_num: int, state: str, county_desc: str,
             print(f"    Page {page_num}: read error {e}")
             return 0, 0, ""
 
-        # For every 50th page, detect county from header
         page_county = current_county
-        if page_num % 50 == 1:
-            header = detect_county_from_page(client, jpeg_data, provider)
-            if header:
-                m = re.search(r"County:\s*([^,]+)", header, re.I)
-                if m:
-                    page_county = m.group(1).strip()
+        page_path   = None
 
-        records = ocr_page(client, jpeg_data, page_county, state, provider)
-        if records is None:
-            # None = quota/credit error — mark as quota_error so we retry later
-            mark_page_progress(reel_num, page_num, state, page_county, "quota_error", 0)
-            return -2, -2, page_county  # -2 signals quota error
-        if not records:
+        if provider == "insession":
+            # Save JPEG for Claude Code to read and transcribe
+            page_path = stage_dir / f"page_{page_num:04d}.jpg"
+            if not page_path.exists():
+                page_path.write_bytes(jpeg_data)
+            records = ocr_page(jpeg_data, provider="insession", page_path=page_path)
+            if not records:
+                # No sidecar yet — mark pending so the pipeline skips on next pass
+                # (not "insession_pending" — use quota_error so reset_quota_errors can clear)
+                mark_page_progress(reel_num, page_num, state, page_county, "quota_error", 0)
+                return -2, -2, page_county  # -2 = pending
+        else:
+            records = ocr_page(jpeg_data, provider=provider)
+
+        if records is None or not records:
             mark_page_progress(reel_num, page_num, state, page_county, "blank", 0)
             return 0, 0, page_county
 
@@ -710,8 +653,6 @@ def process_reel(reel_num: int, state: str, county_desc: str,
         mark_page_progress(reel_num, page_num, state, page_county, "success", t)
         return t, b, page_county
 
-    # Process pages with thread pool
-    stop_flag = threading.Event()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(process_page, e): e for e in jp2_files}
         for i, future in enumerate(as_completed(futures), 1):
@@ -721,24 +662,17 @@ def process_reel(reel_num: int, state: str, county_desc: str,
                     if t == -1:
                         skipped_pages += 1
                     elif t == -2:
-                        # Quota error — cancel remaining futures
-                        quota_errors += 1
-                        if quota_errors >= 3 and not stop_flag.is_set():
-                            print(f"\n  QUOTA ERROR: API credits exhausted after {processed_pages} pages.")
-                            print(f"  Add credits and re-run — completed pages are saved and will be skipped.")
-                            stop_flag.set()
-                            for f in futures:
-                                f.cancel()
+                        pending_pages += 1
                     else:
-                        total_records += t
-                        black_records += b
+                        total_records  += t
+                        black_records  += b
                         processed_pages += 1
                         if county:
                             current_county = county
-                    if i % 25 == 0:
-                        print(f"  Progress: {i}/{total_pages} pages | "
-                              f"{total_records} records ({black_records} Black) | "
-                              f"{skipped_pages} skipped")
+                if i % 25 == 0:
+                    print(f"  Progress: {i}/{total_pages} pages | "
+                          f"{total_records} records ({black_records} Black) | "
+                          f"{skipped_pages} skipped | {pending_pages} pending")
             except Exception as e:
                 print(f"  Page error: {e}")
 
@@ -746,10 +680,11 @@ def process_reel(reel_num: int, state: str, county_desc: str,
         "reel":          reel_num,
         "state":         state,
         "county":        current_county,
+        "provider":      provider,
         "total_pages":   total_pages,
         "processed":     processed_pages,
         "skipped":       skipped_pages,
-        "quota_errors":  quota_errors,
+        "pending":       pending_pages,
         "total_records": total_records,
         "black_records": black_records,
         "timestamp":     datetime.datetime.now().isoformat(),
@@ -757,74 +692,34 @@ def process_reel(reel_num: int, state: str, county_desc: str,
 
     print(f"\n  DONE: Reel {reel_num} ({state})")
     print(f"  Processed {processed_pages} pages, {total_records} records, {black_records} Black")
+    if pending_pages:
+        print(f"  {pending_pages} pages saved to {stage_dir} — transcribe with Claude Code, then re-run")
     log_path = CACHE_DIR / f"reel_{reel_num}_{state.lower().replace(' ','_')}_summary.json"
     log_path.write_text(json.dumps(summary, indent=2))
 
     return summary
 
 
-def check_credits():
-    """Test API connectivity and credit status."""
-    print("Checking API credits...")
-    try:
-        client = get_claude_client()
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=5,
-            messages=[{"role": "user", "content": "Hi"}],
-        )
-        print("  Anthropic (Claude): OK — credits available")
-        return True
-    except Exception as e:
-        err = str(e)
-        if "credit" in err.lower() or "balance" in err.lower():
-            print(f"  Anthropic (Claude): CREDITS EXHAUSTED — {e}")
-        else:
-            print(f"  Anthropic (Claude): Error — {e}")
-
-    try:
-        client = get_openai_client()
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=5,
-            messages=[{"role": "user", "content": "Hi"}],
-        )
-        print("  OpenAI (GPT-4o): OK — credits available")
-        return True
-    except Exception as e:
-        err = str(e)
-        if "quota" in err.lower() or "insufficient" in err.lower():
-            print(f"  OpenAI (GPT-4o): QUOTA EXHAUSTED — {e}")
-        else:
-            print(f"  OpenAI (GPT-4o): Error — {e}")
-
-    print("\n  Both providers unavailable. Add credits before running the pipeline.")
-    return False
-
-
 def main():
-    parser = argparse.ArgumentParser(description="PBA Multi-State 1870 Census Pipeline")
-    parser.add_argument("--state",   help="Process one state (e.g. 'South Carolina')")
-    parser.add_argument("--all",     action="store_true", help="Process all target states")
-    parser.add_argument("--reel",    type=int, help="Process a specific reel number")
-    parser.add_argument("--workers", type=int, default=3, help="Parallel page workers (default 3)")
-    parser.add_argument("--max-pages", type=int, default=None, help="Max pages per reel (for testing)")
-    parser.add_argument("--priority", type=int, default=2, help="Max priority to process (1=highest only, 2=top two, 3=all)")
-    parser.add_argument("--check-credits", action="store_true", help="Test API credit status and exit")
+    parser = argparse.ArgumentParser(description="PBA Multi-State 1870 Census Pipeline (Tesseract, zero API cost)")
+    parser.add_argument("--state",    help="Process one state (e.g. 'South Carolina')")
+    parser.add_argument("--all",      action="store_true", help="Process all target states")
+    parser.add_argument("--reel",     type=int, help="Process a specific reel number")
+    parser.add_argument("--workers",  type=int, default=3, help="Parallel page workers (default 3)")
+    parser.add_argument("--max-pages",type=int, default=None, help="Max pages per reel (for testing)")
+    parser.add_argument("--priority", type=int, default=2,
+                        help="Max priority to process (1=highest only, 2=top two, 3=all)")
+    parser.add_argument("--provider", default="tesseract", choices=["tesseract", "insession"],
+                        help="OCR provider: tesseract (default) or insession (sidecar JSON)")
     args = parser.parse_args()
 
-    if args.check_credits:
-        check_credits()
-        return
-
     if args.reel and args.state:
-        # Single reel mode
         county_desc = f"Reel {args.reel}"
         for reel, desc, _ in REEL_CATALOG.get(args.state, []):
             if reel == args.reel:
                 county_desc = desc
                 break
-        process_reel(args.reel, args.state, county_desc, args.workers, args.max_pages)
+        process_reel(args.reel, args.state, county_desc, args.workers, args.max_pages, args.provider)
         return
 
     states_to_process = []
@@ -837,12 +732,7 @@ def main():
         return
 
     all_summaries = []
-    global_quota_stop = False  # set True when a reel hits quota — stop all further reels
     for state in states_to_process:
-        if global_quota_stop:
-            print(f"\n  GLOBAL QUOTA STOP: skipping {state} and all remaining states.")
-            print(f"  Add credits and re-run — completed pages are saved and will be skipped.")
-            break
         reels = [r for r in REEL_CATALOG.get(state, []) if r[2] <= args.priority]
         if not reels:
             print(f"No reels configured for: {state}")
@@ -851,18 +741,10 @@ def main():
         print(f"STATE: {state} ({len(reels)} reels at priority ≤ {args.priority})")
         print(f"{'#'*60}")
         for reel_num, county_desc, priority in reels:
-            if global_quota_stop:
-                break
-            summary = process_reel(reel_num, state, county_desc, args.workers, args.max_pages)
+            summary = process_reel(reel_num, state, county_desc, args.workers,
+                                   args.max_pages, args.provider)
             all_summaries.append(summary)
-            # If this reel hit quota errors and processed 0 pages, stop everything
-            if summary.get("quota_errors", 0) >= 3 and summary.get("processed", 0) == 0:
-                print(f"\n  QUOTA CONFIRMED EXHAUSTED on Reel {reel_num} ({state}).")
-                print(f"  Stopping pipeline. Add credits and re-run.")
-                global_quota_stop = True
-                break
 
-    # Write master summary
     master_log = CACHE_DIR / f"pipeline_run_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     master_log.write_text(json.dumps(all_summaries, indent=2))
     print(f"\nPipeline complete. Summary: {master_log}")
