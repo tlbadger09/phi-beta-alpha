@@ -923,8 +923,21 @@ def admin_submissions():
             "verified": sum(1 for r in rows if r["status"] == "verified"),
             "rejected": sum(1 for r in rows if r["status"] == "rejected"),
         }
+        submissions = []
+        for r in rows:
+            s = dict(r)
+            # Parse auto_candidates JSON so template can iterate it
+            raw = s.get("auto_candidates")
+            if raw:
+                try:
+                    s["auto_candidates_parsed"] = json.loads(raw)[:5]  # top 5 only
+                except (json.JSONDecodeError, TypeError):
+                    s["auto_candidates_parsed"] = []
+            else:
+                s["auto_candidates_parsed"] = []
+            submissions.append(s)
         return render_template("admin_submissions.html",
-                               submissions=[dict(r) for r in rows], counts=counts)
+                               submissions=submissions, counts=counts)
     except Exception as e:
         return f"Error: {e}", 500
 

@@ -206,14 +206,20 @@
 .join-cta-inner p  { font-size: 0.88rem; color: #9db3d8; line-height: 1.6; max-width: 500px; margin: 0 auto; }
 
 @media (max-width: 640px) {
-  .members-hero-inner { padding: 24px 16px; }
-  .members-count-row  { gap: 20px; }
-  .member-chain       { padding: 14px 14px 8px; }
-  .chain-nodes        { gap: 2px; }
-  .chain-info         { min-width: 90px; max-width: 130px; }
-  .chain-line         { width: 14px; }
-  .member-entry-header{ padding: 14px 16px 12px; }
-  .join-cta-inner     { padding: 24px 16px; }
+  .members-hero-inner  { padding: 24px 16px; }
+  .members-hero-greek  { font-size: 2.5rem; }
+  .members-hero-title  { font-size: 1.2rem; }
+  .members-count-row   { gap: 20px; }
+  .members-count-num   { font-size: 1.6rem; }
+  .member-chain        { padding: 14px 14px 8px; overflow-x: auto; }
+  .chain-nodes         { flex-wrap: nowrap; gap: 2px; }
+  .chain-info          { min-width: 90px; max-width: 130px; }
+  .chain-line          { width: 14px; }
+  .member-entry-header { flex-direction: column; gap: 10px; padding: 14px 16px 12px; }
+  .member-entry-actions{ flex-direction: row; gap: 8px; }
+  .member-entry-actions .btn-primary,
+  .member-entry-actions .btn-gold { flex: 1; text-align: center; }
+  .join-cta-inner      { padding: 24px 16px; }
 }
 </style>
 {% endblock %}

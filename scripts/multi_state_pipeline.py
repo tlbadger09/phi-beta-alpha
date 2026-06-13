@@ -87,18 +87,13 @@ def get_openai_client():
 
 
 def get_ai_client():
-    """Return (client, provider). Prefers Claude, falls back to OpenAI."""
-    try:
-        client = get_claude_client()
-        return client, "claude"
-    except Exception:
-        pass
+    """Return (client, provider). Uses OpenAI GPT-4o — Anthropic credits exhausted."""
     try:
         client = get_openai_client()
         return client, "openai"
     except Exception:
         pass
-    raise RuntimeError("No AI API key found (set ANTHROPIC_API_KEY or OPENAI_API_KEY)")
+    raise RuntimeError("OPENAI_API_KEY not found — set it in ~/.zshrc or environment")
 
 
 # ── State FIPS ─────────────────────────────────────────────────────────────────
@@ -391,13 +386,63 @@ def ocr_page_openai(client, jpeg_bytes: bytes) -> list[dict] | None:
         return []
 
 
+def ocr_page_tesseract(jpeg_bytes: bytes) -> list[dict]:
+    """
+    Local Tesseract OCR fallback — low accuracy on handwriting but zero API cost.
+    Extracts whatever text Tesseract can read and returns minimal record dicts.
+    Only used when API providers are exhausted.
+    """
+    try:
+        import pytesseract
+        img = Image.open(io.BytesIO(jpeg_bytes))
+        # --psm 6: assume uniform block of text; oem 3: default LSTM engine
+        text = pytesseract.image_to_string(img, config="--psm 6 --oem 3")
+        lines = [l.strip() for l in text.splitlines() if l.strip() and len(l.strip()) > 3]
+        if not lines:
+            return []
+        # Very basic heuristic: try to extract name-like tokens from each line
+        records = []
+        for i, line in enumerate(lines[:60]):  # cap at 60 lines per page
+            tokens = line.split()
+            if len(tokens) < 2:
+                continue
+            # Skip lines that look like column headers or page numbers
+            if any(t.lower() in ("name", "age", "sex", "color", "dwelling", "family", "the", "and", "of", "in") for t in tokens[:2]):
+                continue
+            # Guess: first two tokens may be last/first name if they start with uppercase
+            if tokens[0][0].isupper() and tokens[1][0].isupper():
+                records.append({
+                    "line_num": i + 1,
+                    "last_name": tokens[0].rstrip(","),
+                    "first_name": tokens[1].rstrip(","),
+                    "age": None, "sex": "", "color": "",
+                    "occupation": "", "birthplace": "",
+                    "_source": "tesseract",
+                })
+        return records
+    except ImportError:
+        return []
+    except Exception as e:
+        print(f"    Tesseract error: {e}")
+        return []
+
+
 def ocr_page(client, jpeg_bytes: bytes, county: str, state: str,
-             provider: str = "claude") -> list[dict]:
-    """Run OCR on a single census page image using appropriate client."""
+             provider: str = "openai") -> list[dict]:
+    """Run OCR on a single census page image. Falls back to Tesseract if API quota exceeded."""
     if provider == "claude":
-        return ocr_page_claude(client, jpeg_bytes)
+        result = ocr_page_claude(client, jpeg_bytes)
     else:
-        return ocr_page_openai(client, jpeg_bytes)
+        result = ocr_page_openai(client, jpeg_bytes)
+
+    # None = API quota exhausted. Try Tesseract as last-resort fallback.
+    if result is None:
+        print("    Falling back to Tesseract (low accuracy — API credits needed for full quality)")
+        tess = ocr_page_tesseract(jpeg_bytes)
+        if tess:
+            return tess
+        return None  # Signal quota error upstream so pipeline stops after retries
+    return result
 
 
 def parse_ocr_response(raw: str) -> list[dict]:

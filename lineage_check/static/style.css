@@ -1142,6 +1142,56 @@ footer strong { color: var(--gold); }
   .admin-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
+/* ── Members page ────────────────────────────────────────────────────────── */
+.member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-top: 16px;
+}
+
+/* ── Begin verification ───────────────────────────────────────────────────── */
+.begin-intro-card { max-width: 640px; margin: 24px auto 0; }
+.begin-form-card  { max-width: 700px; }
+
+/* ── Status page SVG map ──────────────────────────────────────────────────── */
+.coverage-map-flex { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+.coverage-map-svg  { width:min(100%,520px); height:auto; }
+
+@media (max-width: 640px) {
+  /* Members grid: single column */
+  .member-grid { grid-template-columns: 1fr; }
+
+  /* Chain timeline in member cards */
+  .chain-node { padding-left: 10px; }
+
+  /* Status SVG map — full width */
+  .coverage-map-flex { flex-direction: column; }
+  .coverage-map-svg  { width: 100%; }
+
+  /* Big stat numbers — smaller on mobile */
+  .big-stat-num { font-size: 1.3rem; }
+
+  /* Pipeline live bar — wrap gracefully */
+  .pipeline-live-inner { font-size: 0.72rem; }
+
+  /* Lineage nav row */
+  .lineage-nav-row { flex-direction: row; gap: 8px; }
+
+  /* Certificate page — stack QR below seal on mobile */
+  .cert-page  { padding: 24px 16px; }
+  .cert-border { padding: 16px; }
+  .cert-seal  { flex-direction: column; align-items: center; gap: 1rem; }
+  .cert-greek { font-size: 2rem; }
+  .cert-title { font-size: 1.2rem; }
+
+  /* Verify cert page */
+  .verify-table td, .verify-table th { padding: 6px; font-size: 0.85rem; }
+
+  /* Admin login */
+  .admin-login-card { margin: 1.5rem; }
+}
+
 /* ── Example searches (homepage) ─────────────────────────────────────────── */
 .example-searches { margin-top: 20px; }
 .example-label    { font-size: 0.78rem; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }

@@ -31,6 +31,7 @@
           <th>Location</th>
           <th>OCR / HISTID</th>
           <th>Notes</th>
+          <th>Auto-Suggest</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -60,6 +61,27 @@
             {% if s.notes %}
               <span title="{{ s.notes }}">{{ s.notes[:60] }}{% if s.notes|length > 60 %}…{% endif %}</span>
             {% else %}—{% endif %}
+          </td>
+          <td class="admin-candidates">
+            {% if s.auto_candidates %}
+              {% set cands = s.auto_candidates | tojson | safe %}
+              <div class="candidates-wrap">
+              {% for c in (s.auto_candidates_parsed or []) %}
+                <div class="candidate-chip
+                  {% if c.confidence >= 70 %}chip-high
+                  {% elif c.confidence >= 40 %}chip-med
+                  {% else %}chip-low{% endif %}"
+                  title="{{ c.match.last_name }}, {{ c.match.first_name }} · {{ c.match.county }}, {{ c.match.state }} · conf {{ c.confidence }}">
+                  <span class="chip-name">{{ c.match.last_name }}, {{ c.match.first_name[:8] }}</span>
+                  <span class="chip-score">{{ c.confidence }}</span>
+                </div>
+              {% else %}
+                <span style="color:#aaa; font-size:0.72rem;">none found</span>
+              {% endfor %}
+              </div>
+            {% else %}
+              <span style="color:#ccc; font-size:0.72rem;">—</span>
+            {% endif %}
           </td>
           <td>
             <span class="status-badge status-{{ s.status }}">{{ s.status|title }}</span>
@@ -129,5 +151,25 @@
 .reject-btn  { background: #b71c1c; color: #fff; }
 .reject-btn:hover { background: #8e1515; }
 .neutral-btn { background: #eee; color: #333; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; }
+
+/* Auto-suggest candidate chips */
+.admin-candidates { max-width: 180px; }
+.candidates-wrap  { display:flex; flex-direction:column; gap:3px; }
+.candidate-chip {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:2px 7px; border-radius:10px; font-size:0.68rem; font-weight:bold;
+  cursor:help; gap:6px;
+}
+.chip-high { background:#e8f5e9; color:#1a6e3a; border:1px solid #a5d6a7; }
+.chip-med  { background:#fff8e6; color:#7a5c00; border:1px solid #f9c74f; }
+.chip-low  { background:#fdecea; color:#b71c1c; border:1px solid #f4b8b8; }
+.chip-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chip-score{ flex-shrink:0; font-variant-numeric:tabular-nums; }
+
+@media (max-width:640px) {
+  .admin-table { font-size:0.75rem; }
+  .admin-table th, .admin-table td { padding:7px 8px; }
+  .admin-candidates { max-width:120px; }
+}
 </style>
 {% endblock %}
