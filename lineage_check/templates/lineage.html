@@ -40,9 +40,14 @@
 {% block content %}
   <div class="lineage-nav-row">
     <a href="/" class="back-link">&#8592; Back to Search</a>
-    <a href="/certificate/{{ member.member_id }}" class="btn-gold" style="padding:6px 16px; font-size:0.85rem;">
-      &#128196; Print Certificate
-    </a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a href="/certificate/{{ member.member_id }}" class="btn-gold" style="padding:6px 16px; font-size:0.85rem;">
+        &#128196; Print Certificate
+      </a>
+      <a href="/packet/{{ member.member_id }}" class="btn-primary" style="padding:6px 16px; font-size:0.85rem; background:var(--blue); color:#fff; text-decoration:none; border-radius:4px;">
+        &#128196; Download Verification Packet
+      </a>
+    </div>
   </div>
 
   <div class="results-header">

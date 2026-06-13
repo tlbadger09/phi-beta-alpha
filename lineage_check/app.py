@@ -1142,5 +1142,46 @@ def admin_suggest(submission_id):
     return jsonify({"candidates": candidates, "count": len(candidates)})
 
 
+@app.route("/packet/<member_id>")
+@_require_admin
+def download_packet(member_id):
+    """Generate and serve a Lineage Verification Packet PDF for a member."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    try:
+        from generate_packet import generate_packet
+        out_dir = Path.home() / "Documents/phi-beta-alpha/output/packets"
+        path = generate_packet(member_id, out_dir)
+        if not path:
+            abort(404)
+        return send_file(str(path), mimetype="application/pdf",
+                         as_attachment=True, download_name=path.name)
+    except Exception as e:
+        return f"Packet generation error: {e}", 500
+
+
+@app.route("/api/bridge/<member_id>")
+@_require_admin
+def api_bridge_candidates(member_id):
+    """Return Bridge Engine candidates for a member's pre-1870 ancestors."""
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT bc.candidate_id, bc.ancestor_id, bc.source_table, bc.source_id,
+               bc.enslaver_id, bc.overall_score, bc.notes, bc.computed_at,
+               la.first_name, la.last_name, la.birth_year, la.generation,
+               e.first_name as enslaver_first, e.last_name as enslaver_last,
+               e.county as enslaver_county
+        FROM bridge_candidates bc
+        JOIN lineage_ancestors la ON la.ancestor_id = bc.ancestor_id
+        LEFT JOIN enslavers e ON e.enslaver_id = bc.enslaver_id
+        WHERE bc.member_id=?
+        ORDER BY bc.overall_score DESC
+    """, (member_id,)).fetchall()
+    conn.close()
+    candidates = [dict(r) for r in rows]
+    return jsonify({"member_id": member_id, "count": len(candidates), "candidates": candidates})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5050)
