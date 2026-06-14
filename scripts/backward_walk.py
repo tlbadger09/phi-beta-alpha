@@ -446,12 +446,26 @@ def _fs_candidate(r: dict, decade: int) -> dict:
             birth_yr = int(bdate.lstrip("+").split("-")[0])
         except (ValueError, IndexError):
             pass
+    # Extract state/county from residence place string like
+    # "Jones, McIntosh, Georgia, United States"
+    resi = r.get("resi_place", "") or ""
+    resi_parts = [p.strip() for p in resi.split(",")]
+    resi_state  = None
+    resi_county = None
+    for part in reversed(resi_parts):
+        if part.lower() in ("united states", "usa", "u.s."):
+            continue
+        if resi_state is None:
+            resi_state = part
+        elif resi_county is None:
+            resi_county = part
+            break
     return {
         "first_name":    r.get("given_name"),
         "last_name":     r.get("surname"),
         "birth_year":    birth_yr,
-        "state":         None,
-        "county":        None,
+        "state":         resi_state,
+        "county":        resi_county,
         "sex":           None,
         "race":          None,
         "birthplace":    r.get("birth_place"),
@@ -599,55 +613,206 @@ class WalkFamilySearchClient(FamilySearchClient):
         except ImportError:
             return []
 
-        collection_id = FS_COLLECTION_IDS.get(decade)
+        # /platform/records/search requires a registered developer app (returns 404
+        # with a plain session token). /platform/tree/search works with fssessionid.
         params: dict = {"count": 20}
         if given_name:
             params["q.givenName"] = given_name
         if surname:
             params["q.surname"] = surname
         if birth_year:
-            params["q.birthLikeYear"] = str(birth_year)
+            params["q.birthLikeDate.from"] = str(birth_year - window)
+            params["q.birthLikeDate.to"]   = str(birth_year + window)
         if state:
             params["q.residencePlace"] = f"{state.title()}, United States"
-        if collection_id:
-            params["q.collectionId"] = collection_id
 
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         try:
             resp = _req.get(
-                f"{self.BASE}/platform/records/search",
+                f"{self.BASE}/platform/tree/search",
                 params=params, headers=headers, timeout=12,
             )
             if resp.status_code == 401:
                 self.available = False
                 return []
             resp.raise_for_status()
-            data  = resp.json()
-            out   = []
+            data = resp.json()
+            out: list[dict] = []
+            persons_seen: set[str] = set()
             for e in data.get("entries", []):
                 content = e.get("content", {}).get("gedcomx", {})
-                persons = content.get("persons", [{}])
-                p = persons[0] if persons else {}
-                facts = p.get("facts", [])
-                birth_f = next((f for f in facts if "/Birth" in f.get("type", "")), {})
-                resi_f  = next((f for f in facts if "/Residence" in f.get("type", "") or
-                                "/Census" in f.get("type", "")), {})
-                name_parts = (p.get("names") or [{}])[0].get("nameForms", [{}])[0].get("parts", [])
-                given  = next((x["value"] for x in name_parts if "/Given"   in x.get("type", "")), "")
-                family = next((x["value"] for x in name_parts if "/Surname" in x.get("type", "")), "")
-                out.append({
-                    "fs_id":       e.get("id", ""),
-                    "given_name":  given,
-                    "surname":     family,
-                    "birth_date":  birth_f.get("date", {}).get("formal", ""),
-                    "birth_place": birth_f.get("place", {}).get("original", ""),
-                    "resi_place":  resi_f.get("place",  {}).get("original", ""),
-                    "source":      "FamilySearch",
-                    "decade":      decade,
-                })
+                for p in content.get("persons", []):
+                    pid = p.get("id", "")
+                    if pid in persons_seen:
+                        continue
+                    # Skip non-primary persons in the result block
+                    asc = p.get("display", {}).get("ascendancyNumber")
+                    if asc not in ("1", None):
+                        continue
+                    persons_seen.add(pid)
+                    facts = p.get("facts", [])
+                    birth_f = next((f for f in facts
+                                    if "/Birth" in f.get("type", "")), {})
+                    # Find residence/census fact nearest the target decade
+                    resi_facts = [f for f in facts
+                                  if "/Residence" in f.get("type", "")
+                                  or "/Census"    in f.get("type", "")]
+                    best_resi: dict = {}
+                    best_dist = 999
+                    for rf in resi_facts:
+                        try:
+                            yr = int(rf.get("date", {}).get("original", "")[:4])
+                            dist = abs(yr - decade)
+                            if dist < best_dist:
+                                best_dist = dist
+                                best_resi = rf
+                        except (ValueError, TypeError):
+                            pass
+                    name_parts = (p.get("names") or [{}])[0].get("nameForms", [{}])[0].get("parts", [])
+                    given  = next((x["value"] for x in name_parts if "/Given"   in x.get("type", "")), "")
+                    family = next((x["value"] for x in name_parts if "/Surname" in x.get("type", "")), "")
+                    disp   = p.get("display", {})
+                    out.append({
+                        "fs_id":       pid,
+                        "given_name":  given  or disp.get("name", "").split()[0],
+                        "surname":     family or " ".join(disp.get("name", "").split()[1:]),
+                        "birth_date":  birth_f.get("date", {}).get("formal", ""),
+                        "birth_place": birth_f.get("place", {}).get("original", ""),
+                        "resi_place":  best_resi.get("place", {}).get("original", ""),
+                        "source":      "FamilySearch",
+                        "decade":      decade,
+                    })
             return out
         except Exception:
             return []
+
+    def get_ancestors(self, person_id: str, generations: int = 4) -> list[dict]:
+        """
+        Return a list of direct-line ancestors for person_id using
+        /platform/tree/ancestry.  Each entry is a normalised dict with
+        keys: fs_id, given_name, surname, birth_year, birth_place,
+        state, county, ascendancy_number, residence_by_decade.
+        ascendancy_number follows the standard Ahnentafel numbering
+        (1=self, 2=father, 3=mother, 4=pat-grandfather, …).
+        """
+        if not self.available:
+            return []
+        try:
+            import requests as _req
+        except ImportError:
+            return []
+        try:
+            resp = _req.get(
+                f"{self.BASE}/platform/tree/ancestry",
+                params={"person": person_id, "generations": generations},
+                headers={"Authorization": f"Bearer {self.token}",
+                         "Accept": "application/json"},
+                timeout=12,
+            )
+            if resp.status_code == 401:
+                self.available = False
+                return []
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return []
+
+        out = []
+        for p in data.get("persons", []):
+            asc_num_str = p.get("display", {}).get("ascendancyNumber", "")
+            try:
+                asc_num = int(asc_num_str)
+            except (ValueError, TypeError):
+                asc_num = 0
+            facts   = p.get("facts", [])
+            birth_f = next((f for f in facts if "/Birth" in f.get("type", "")), {})
+            birth_yr = None
+            try:
+                birth_yr = int(birth_f.get("date", {}).get("original", "")[:4])
+            except (ValueError, TypeError):
+                pass
+
+            resi_by_decade: dict[int, str] = {}
+            for f in facts:
+                if "/Residence" in f.get("type", "") or "/Census" in f.get("type", ""):
+                    try:
+                        yr   = int(f.get("date", {}).get("original", "")[:4])
+                        dec  = round(yr / 10) * 10
+                        place = f.get("place", {}).get("original", "")
+                        if place:
+                            resi_by_decade[dec] = place
+                    except (ValueError, TypeError):
+                        pass
+
+            name_parts = (p.get("names") or [{}])[0].get("nameForms", [{}])[0].get("parts", [])
+            given  = next((x["value"] for x in name_parts if "/Given"   in x.get("type", "")), "")
+            family = next((x["value"] for x in name_parts if "/Surname" in x.get("type", "")), "")
+            disp   = p.get("display", {})
+            birth_place = birth_f.get("place", {}).get("original", "")
+
+            # Extract state from birth place
+            bp_parts = [s.strip() for s in birth_place.split(",")]
+            bp_state = next((s for s in reversed(bp_parts)
+                             if s.lower() not in ("united states", "usa", "")), None)
+
+            out.append({
+                "fs_id":            p.get("id", ""),
+                "given_name":       given or disp.get("name", "").split()[0],
+                "surname":          family or " ".join(disp.get("name", "").split()[1:]),
+                "birth_year":       birth_yr,
+                "birth_place":      birth_place,
+                "state":            bp_state,
+                "ascendancy_number": asc_num,
+                "residence_by_decade": resi_by_decade,
+            })
+        return out
+
+    def best_ancestor_for_decade(self, person_id: str, decade: int,
+                                  max_gen: int = 4) -> dict | None:
+        """
+        Return the Ahnentafel ancestor of person_id whose census record is
+        closest to `decade`, prioritising the paternal line (even numbers).
+        Returns None if the ancestry tree can't be fetched or has no match.
+        """
+        ancestors = self.get_ancestors(person_id, generations=max_gen)
+        best: dict | None = None
+        best_dist = 999
+        for anc in ancestors:
+            if anc["ascendancy_number"] <= 1:   # skip self
+                continue
+            for dec, place in anc["residence_by_decade"].items():
+                dist = abs(dec - decade)
+                if dist < best_dist or (dist == best_dist and
+                        best and anc["ascendancy_number"] < best["ascendancy_number"]):
+                    best_dist = dist
+                    rp = [s.strip() for s in place.split(",")]
+                    resi_state  = next((s for s in reversed(rp)
+                                        if s.lower() not in ("united states", "usa", "")), None)
+                    resi_county = None
+                    seen_state = False
+                    for part in reversed(rp):
+                        if part.lower() in ("united states", "usa", ""):
+                            continue
+                        if not seen_state:
+                            seen_state = True
+                            continue
+                        resi_county = part
+                        break
+                    best = {
+                        "fs_id":       anc["fs_id"],
+                        "given_name":  anc["given_name"],
+                        "surname":     anc["surname"],
+                        "birth_year":  anc["birth_year"],
+                        "birth_date":  f"+{anc['birth_year']}" if anc["birth_year"] else "",
+                        "birth_place": anc["birth_place"],
+                        "resi_place":  place,
+                        "state":       resi_state,
+                        "county":      resi_county,
+                        "source":      "FamilySearch",
+                        "decade":      decade,
+                        "ascendancy_number": anc["ascendancy_number"],
+                    }
+        return best if best_dist <= 15 else None
 
 
 # ── Main walk engine ──────────────────────────────────────────────────────────
@@ -720,14 +885,21 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                 est_ancestor_birth, county=current.get("county"),
                 window=20,
             )
-            # Also try FamilySearch for the ancestor at this decade
+            # Try FamilySearch ancestry tree first (most accurate for crossover)
             if fs_client and getattr(fs_client, "available", False):
-                fs_hits = fs_client.search_census_decade(
-                    "", current["last_name"], est_ancestor_birth,
-                    current.get("state") or "", target_decade,
-                )
-                for r in fs_hits:
-                    candidates_raw.append(_fs_candidate(r, target_decade))
+                current_fs_id = current.get("_fs_id") or current.get("source_id")
+                if current_fs_id and current_fs_id != "anchor":
+                    anc = fs_client.best_ancestor_for_decade(current_fs_id, target_decade)
+                    if anc:
+                        candidates_raw.insert(0, _fs_candidate(anc, target_decade))
+                else:
+                    # Fall back to surname search when no FS person ID available
+                    fs_hits = fs_client.search_census_decade(
+                        "", current["last_name"], est_ancestor_birth,
+                        current.get("state") or "", target_decade,
+                    )
+                    for r in fs_hits:
+                        candidates_raw.append(_fs_candidate(r, target_decade))
 
             scored = []
             for cand in candidates_raw:
@@ -899,6 +1071,9 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
             chain_links.append(link)
 
             # Update current for next step
+            fs_id = (best.get("source_id") or "")
+            if best.get("source_table") != "familysearch":
+                fs_id = current.get("_fs_id", "")
             current = {
                 "first_name": best.get("first_name") or current.get("first_name"),
                 "last_name":  best.get("last_name")  or current.get("last_name"),
@@ -909,6 +1084,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                 "race":       best.get("race")       or current.get("race"),
                 "birthplace": best.get("birthplace") or current.get("birthplace"),
                 "household":  best.get("household"),
+                "_fs_id":     fs_id,
             }
 
         if target_decade == 1870:
