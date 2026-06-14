@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Walk Chain — {{ chain.anchor.first_name }} {{ chain.anchor.last_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+.walk-header { max-width: 900px; margin: 1.5rem auto 0; }
+.walk-header h2 { color: var(--gold, #c9a227); margin-bottom: 0.3rem; }
+.walk-meta { color: #888; font-size: 0.88rem; margin-bottom: 1.5rem; }
+.walk-meta span { margin-right: 1.5rem; }
+.walk-meta .chain-product { font-weight: bold; font-size: 1rem; }
+.walk-meta .chain-product.strong { color: #6ecf6e; }
+.walk-meta .chain-product.medium { color: #cfcf6e; }
+.walk-meta .chain-product.weak   { color: #cf6e6e; }
+
+/* Chain timeline */
+.chain-timeline { max-width: 900px; margin: 0 auto 3rem; position: relative; padding-left: 60px; }
+.chain-timeline::before {
+  content: '';
+  position: absolute; left: 28px; top: 0; bottom: 0;
+  width: 2px; background: linear-gradient(to bottom, #2a4a9f, #666, #2a4a2a);
+}
+
+.chain-link { position: relative; margin-bottom: 0.4rem; }
+.chain-link .decade-badge {
+  position: absolute; left: -46px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.68rem; font-weight: bold; color: #fff;
+  border: 2px solid;
+  z-index: 1;
+}
+.chain-link.is-anchor .decade-badge    { background: #1a3a8f; border-color: #4a7adf; }
+.chain-link.is-gap .decade-badge       { background: #1a1a1a; border-color: #555; color: #555; }
+.chain-link.ipums-validated .decade-badge { background: #1a4a1a; border-color: #4acf4a; }
+.chain-link.normal .decade-badge       { background: #1a2a3a; border-color: #3a5a8f; }
+
+.link-card {
+  background: #111; border: 1px solid #222; border-radius: 6px;
+  padding: 0.7rem 1rem; margin-left: 0.5rem;
+}
+.chain-link.is-anchor .link-card { border-color: #2a4a9f; background: #0d1a30; }
+.chain-link.is-gap .link-card    { border-color: #2a2a2a; opacity: 0.6; }
+.chain-link.ipums-validated .link-card { border-color: #1a4a1a; }
+
+.link-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.link-name { font-size: 1.05rem; color: #eee; font-weight: 600; }
+.link-name.unknown { color: #555; font-style: italic; }
+.link-loc { color: #999; font-size: 0.85rem; margin-top: 0.15rem; }
+
+.link-badges { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.badge { font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 3px; }
+.badge.ipums  { background: #1a4a1a; color: #6ecf6e; border: 1px solid #2a6a2a; }
+.badge.anchor { background: #1a2a5a; color: #7aa7ef; border: 1px solid #2a4a8f; }
+.badge.gap    { background: #1a1a1a; color: #666;    border: 1px solid #333; }
+.badge.fs     { background: #2a1a3a; color: #9a7acf; border: 1px solid #4a2a6a; }
+.badge.ocr    { background: #2a1a1a; color: #cf7a4a; border: 1px solid #6a3a2a; }
+
+.conf-bar-wrap { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; }
+.conf-bar { height: 6px; border-radius: 3px; flex: 1; max-width: 140px; background: #222; }
+.conf-bar-fill { height: 100%; border-radius: 3px; }
+.conf-label { font-size: 0.8rem; color: #aaa; min-width: 50px; }
+.conf-label.weakest { color: #cf6e6e; font-weight: bold; }
+
+.score-breakdown { font-size: 0.75rem; color: #666; margin-top: 0.35rem; }
+.score-breakdown span { margin-right: 0.8rem; }
+.score-breakdown span.nonzero { color: #888; }
+
+.runners-up { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid #1a1a1a; }
+.runners-up-label { font-size: 0.72rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.2rem; }
+.runner { font-size: 0.8rem; color: #666; }
+.runner span { margin-right: 0.8rem; }
+
+.source-link { font-size: 0.75rem; color: #557; }
+.source-link a { color: #4a7adf; text-decoration: none; }
+.source-link a:hover { text-decoration: underline; }
+
+/* Connector line between cards */
+.chain-connector { position: relative; height: 18px; }
+.chain-connector::after {
+  content: '';
+  position: absolute; left: calc(50% - 1px);
+  top: 0; bottom: 0; width: 1px; background: #2a2a3a;
+}
+.chain-connector.solid-line::after  { background: #3a5a9f; }
+.chain-connector.dashed-line::after { background: repeating-linear-gradient(to bottom, #3a5a4f 0 4px, transparent 4px 8px); }
+.chain-connector.gap-line::after    { background: #2a2a2a; }
+
+.handoff-box {
+  max-width: 900px; margin: 0 auto 2rem;
+  background: #0d2a0d; border: 1px solid #2a6a2a; border-radius: 6px;
+  padding: 1rem 1.2rem; display: flex; justify-content: space-between; align-items: center;
+}
+.handoff-box p { color: #9fc99f; margin: 0; font-size: 0.92rem; }
+.handoff-box a { background: #1a6a1a; color: #fff; text-decoration: none; padding: 0.5rem 1.2rem; border-radius: 4px; font-size: 0.88rem; }
+.handoff-box a:hover { background: #2a8a2a; }
+
+.walk-actions { max-width: 900px; margin: 0 auto 2rem; display: flex; gap: 1rem; }
+.walk-actions a, .walk-actions button {
+  background: #1a1a1a; border: 1px solid #333; color: #aaa;
+  text-decoration: none; padding: 0.45rem 1rem; border-radius: 4px; font-size: 0.85rem;
+  cursor: pointer;
+}
+.walk-actions a:hover, .walk-actions button:hover { border-color: #555; color: #eee; }
+
+.weakest-note {
+  max-width: 900px; margin: 0 auto 1.5rem;
+  background: #2a1a0a; border: 1px solid #6a3a0a; border-radius: 4px;
+  padding: 0.6rem 1rem; color: #cf9a4a; font-size: 0.85rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="walk-header">
+  <h2>Backward Walk: {{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</h2>
+  <div class="walk-meta">
+    <span>Born ~{{ chain.anchor.birth_year }}</span>
+    <span>{{ chain.anchor.county or '' }}{% if chain.anchor.county and chain.anchor.state %}, {% endif %}{{ chain.anchor.state or '' }}</span>
+    <span>Anchor: {{ chain.anchor.start_decade }} census</span>
+    {% if chain.anchor.verified_by %}
+    <span>Confirmed by: {{ chain.anchor.verified_by }}</span>
+    {% endif %}
+    {% if chain.chain_product %}
+      {% set pct = (chain.chain_product * 100)|int %}
+      &nbsp;&nbsp;
+      <span class="chain-product {% if pct >= 60 %}strong{% elif pct >= 35 %}medium{% else %}weak{% endif %}">
+        Chain confidence: {{ pct }}%
+      </span>
+    {% endif %}
+    <span style="float:right; color:#444; font-size:0.78rem;">{{ chain.chain_id }}</span>
+  </div>
+</div>
+
+{% if chain.weakest_link_decade and chain.weakest_link_score is not none %}
+<div class="weakest-note">
+  <strong>Weakest link:</strong> {{ chain.weakest_link_decade }} census
+  ({{ chain.weakest_link_score }}/100) — this link caps the chain's overall trust.
+  Strengthening this evidence improves the whole rope.
+</div>
+{% endif %}
+
+<div class="walk-actions">
+  <a href="/walk">← All Walk Chains</a>
+  <a href="/api/walk/{{ chain.chain_id }}">JSON</a>
+  {% if chain.member_id %}
+  <a href="/lineage/{{ chain.member_id }}">Lineage Timeline</a>
+  {% endif %}
+</div>
+
+<div class="chain-timeline">
+  {% set last_link = chain.links[-1] if chain.links else none %}
+
+  {% for link in chain.links %}
+    {% set is_anchor = loop.first %}
+    {% set is_gap    = link.is_gap %}
+    {% set is_ipums  = link.ipums_validated %}
+    {% set conf      = link.confidence %}
+    {% set is_weakest = (chain.weakest_link_decade == link.decade and not is_anchor) %}
+
+    {% if link.link_tier == 'ipums-validated' %}
+      {% set css_class = 'ipums-validated' %}
+    {% elif is_anchor %}
+      {% set css_class = 'is-anchor' %}
+    {% elif is_gap %}
+      {% set css_class = 'is-gap' %}
+    {% else %}
+      {% set css_class = 'normal' %}
+    {% endif %}
+
+    <div class="chain-link {{ css_class }}">
+      <div class="decade-badge">{{ link.decade }}</div>
+      <div class="link-card">
+        <div class="link-card-header">
+          <div>
+            {% if is_gap %}
+              <div class="link-name unknown">No match found</div>
+              <div class="link-loc">Gap — record not located in available corpus</div>
+            {% else %}
+              <div class="link-name">
+                {{ link.first_name or '' }} {{ link.last_name or '' }}
+              </div>
+              <div class="link-loc">
+                {% if link.county %}{{ link.county }},{% endif %}
+                {{ link.state or '' }}
+                {% if link.birth_year %}&nbsp;·&nbsp; b.~{{ link.birth_year }}{% endif %}
+                {% if link.birth_month %} (month {{ link.birth_month }}){% endif %}
+                {% if link.age_at_census %}&nbsp;·&nbsp; age {{ link.age_at_census }}{% endif %}
+              </div>
+            {% endif %}
+          </div>
+          <div class="link-badges">
+            {% if is_anchor %}
+              <span class="badge anchor">anchor</span>
+            {% endif %}
+            {% if is_gap %}
+              <span class="badge gap">gap</span>
+            {% endif %}
+            {% if is_ipums %}
+              <span class="badge ipums">IPUMS ★</span>
+            {% endif %}
+            {% if link.source_table == 'familysearch' %}
+              <span class="badge fs">FamilySearch</span>
+            {% elif link.source_table and 'ocr' in link.source_table %}
+              <span class="badge ocr">OCR corpus</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if not is_gap and not is_anchor %}
+        <div class="conf-bar-wrap">
+          {% set bar_color = '#6ecf6e' if conf >= 70 else ('#cfcf6e' if conf >= 45 else '#cf6e6e') %}
+          <div class="conf-bar">
+            <div class="conf-bar-fill" style="width:{{ conf }}%; background:{{ bar_color }};"></div>
+          </div>
+          <div class="conf-label {% if is_weakest %}weakest{% endif %}">
+            {{ conf }}/100{% if is_weakest %} ← weakest{% endif %}
+          </div>
+        </div>
+
+        {% if link.score_breakdown %}
+        <div class="score-breakdown">
+          {% for k, v in link.score_breakdown.items() %}
+            <span class="{% if v > 0 %}nonzero{% endif %}">{{ k }}={{ v }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if link.runners_up %}
+        <div class="runners-up">
+          <div class="runners-up-label">Runners-up</div>
+          {% for ru in link.runners_up %}
+          <div class="runner">
+            <span>{{ ru.name }}</span>
+            <span>{{ ru.score }}/100</span>
+            <span style="color:#444">{{ ru.source }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if link.source_id and link.source_table %}
+        <div class="source-link">
+          Source: {{ link.source_table }} / {{ link.source_id }}
+          {% if link.source_table == 'familysearch' and link.source_id %}
+          &nbsp;—&nbsp;
+          <a href="https://www.familysearch.org/ark:/61903/1:1:{{ link.source_id }}"
+             target="_blank" rel="noopener">View on FamilySearch</a>
+          {% endif %}
+          {% if link.ipums_histid %}
+          &nbsp;·&nbsp; IPUMS HISTID: {{ link.ipums_histid }}
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {# Connector between cards #}
+    {% if not loop.last %}
+      {% set next_link = chain.links[loop.index] %}
+      {% if next_link.is_gap %}
+        <div class="chain-connector gap-line"></div>
+      {% elif next_link.link_tier == 'ipums-validated' %}
+        <div class="chain-connector solid-line"></div>
+      {% else %}
+        <div class="chain-connector solid-line"></div>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+</div>
+
+{# Bridge Engine handoff if the last link is 1870 and not a gap #}
+{% if chain.links %}
+  {% set final = chain.links[-1] %}
+  {% if final.decade == 1870 and not final.is_gap %}
+  <div class="handoff-box">
+    <p>
+      <strong>1870 reached.</strong>
+      {{ final.first_name or '' }} {{ final.last_name or '' }} is the end of the named rope.
+      The Bridge Engine can now search slave schedules, Freedman's Bank, and Freedmen's Bureau
+      to cross the emancipation wall.
+    </p>
+    {% if chain.member_id %}
+    <a href="/admin/submissions">View in Admin</a>
+    {% else %}
+    <a href="/begin?last={{ (final.last_name or '')|urlencode }}&first={{ (final.first_name or '')|urlencode }}&year={{ final.birth_year or '' }}&state={{ (final.state or '')|urlencode }}&county={{ (final.county or '')|urlencode }}">Begin Verification</a>
+    {% endif %}
+  </div>
+  {% elif final.is_gap %}
+  <div style="max-width:900px; margin:0 auto 2rem; background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:1rem; color:#888; font-size:0.88rem;">
+    Walk ended before reaching 1870 — some decade gaps remain.
+    Connect a FamilySearch account (set FS_TOKEN) to fill gaps in 1910–1940.
+    The OCR corpus covers 1870 GA records directly.
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Anchored Backward Walk{% endblock %}
+
+{% block head_extra %}
+<style>
+.walk-form { max-width: 680px; margin: 2rem auto; }
+.walk-form h2 { color: var(--gold, #c9a227); margin-bottom: 0.5rem; }
+.walk-form p.desc { color: #ccc; font-size: 0.92rem; margin-bottom: 1.5rem; line-height: 1.6; }
+.walk-form .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.walk-form .form-row .field { flex: 1; }
+.walk-form label { display: block; color: #aaa; font-size: 0.82rem; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.walk-form input, .walk-form select { width: 100%; padding: 0.5rem 0.7rem; background: #1a1a1a; border: 1px solid #333; color: #eee; border-radius: 4px; font-size: 0.95rem; }
+.walk-form input:focus, .walk-form select:focus { outline: none; border-color: var(--gold, #c9a227); }
+.walk-form .submit-btn { background: var(--blue, #1a3a8f); color: #fff; border: none; padding: 0.7rem 2rem; border-radius: 4px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+.walk-form .submit-btn:hover { background: #2a4aaf; }
+.walk-error { background: #3a1a1a; border: 1px solid #8f1a1a; color: #ff9999; padding: 0.7rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+.walk-note { background: #1a2a1a; border: 1px solid #2a6a2a; color: #9fc99f; padding: 0.7rem 1rem; border-radius: 4px; margin-bottom: 1.5rem; font-size: 0.88rem; }
+.walk-list { max-width: 860px; margin: 2.5rem auto 0; }
+.walk-list h3 { color: var(--gold, #c9a227); border-bottom: 1px solid #333; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+.walk-list table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.walk-list th { color: #888; text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #333; font-weight: normal; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.05em; }
+.walk-list td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1e1e1e; color: #ddd; }
+.walk-list td a { color: var(--blue, #4a7adf); text-decoration: none; }
+.walk-list td a:hover { text-decoration: underline; }
+.chain-product { font-weight: bold; }
+.chain-product.strong { color: #6ecf6e; }
+.chain-product.medium { color: #cfcf6e; }
+.chain-product.weak   { color: #cf6e6e; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="walk-form">
+  <h2>Anchored Backward Walk</h2>
+  <p class="desc">
+    Start from a person that living family members can confirm — typically someone who appears in the
+    1950 census. The engine walks backward decade by decade to 1870, scoring each link and compounding
+    confidence. At 1870, the chain hands off to the Bridge Engine to cross the emancipation wall.
+  </p>
+
+  <div class="walk-note">
+    <strong>What makes this different from a regular search:</strong> Every link in this chain is
+    anchored to a person a living relative can verify. Confidence compounds down — the weakest link
+    caps the trust of everything earlier. The output is a <em>proven descent path</em>, not a tree.
+  </div>
+
+  {% if error %}
+  <div class="walk-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/walk">
+    <div class="form-row">
+      <div class="field">
+        <label>First Name</label>
+        <input type="text" name="first_name" placeholder="e.g. Clifton"
+               value="{{ prefill.first_name if prefill else '' }}" required>
+      </div>
+      <div class="field">
+        <label>Last Name</label>
+        <input type="text" name="last_name" placeholder="e.g. Bacon"
+               value="{{ prefill.last_name if prefill else '' }}" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Birth Year</label>
+        <input type="number" name="birth_year" placeholder="e.g. 1907" min="1800" max="1970"
+               value="{{ prefill.birth_year if prefill else '' }}" required>
+      </div>
+      <div class="field">
+        <label>Anchor Census Year</label>
+        <select name="start_decade">
+          {% for decade in DECADE_LADDER %}
+            {% if decade >= 1900 %}
+            <option value="{{ decade }}" {% if decade == 1950 %}selected{% endif %}>{{ decade }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>State</label>
+        <select name="state" required>
+          {% for s in TARGET_STATES %}
+          {% if s != 'All States' %}
+          <option value="{{ s }}"
+            {% if prefill and prefill.state == s %}selected
+            {% elif not prefill and s == 'Georgia' %}selected
+            {% endif %}>{{ s }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>County (optional)</label>
+        <input type="text" name="county" placeholder="e.g. McIntosh"
+               value="{{ prefill.county if prefill else '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Confirmed by (living relative)</label>
+        <input type="text" name="verified_by" placeholder="e.g. Grandchild of Clifton Bacon">
+      </div>
+      <div class="field">
+        <label>Member ID (optional)</label>
+        <input type="text" name="member_id" placeholder="e.g. MEMBER-BACON-CLIFTON-1906">
+      </div>
+    </div>
+    <button type="submit" class="submit-btn">Begin Walk →</button>
+  </form>
+</div>
+
+{% if walks %}
+<div class="walk-list">
+  <h3>Existing Walk Chains</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Anchor</th>
+        <th>Start</th>
+        <th>State</th>
+        <th>Chain Product</th>
+        <th>Weakest Link</th>
+        <th>Status</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in walks %}
+      <tr>
+        <td><a href="/walk/{{ w.chain_id }}">{{ w.anchor_name }}</a></td>
+        <td>{{ w.start_decade }}</td>
+        <td>{{ w.state or '—' }}</td>
+        <td>
+          {% if w.chain_product %}
+            {% set pct = (w.chain_product * 100)|int %}
+            <span class="chain-product {% if pct >= 60 %}strong{% elif pct >= 35 %}medium{% else %}weak{% endif %}">
+              {{ pct }}%
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ w.weakest_score or '—' }}{% if w.weakest_score %}/100{% endif %}</td>
+        <td>{{ w.status }}</td>
+        <td>{{ (w.created_at or '')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

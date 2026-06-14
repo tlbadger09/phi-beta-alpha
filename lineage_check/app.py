@@ -20,6 +20,20 @@ from search import (
     GA_COUNTY_NHGIS, get_family_cluster,
 )
 
+# Lazy-loaded; keeps startup fast and backward_walk optional
+_backward_walk_mod = None
+
+def _bw():
+    global _backward_walk_mod
+    if _backward_walk_mod is None:
+        import sys as _sys
+        _scripts = str(Path(__file__).parent.parent / "scripts")
+        if _scripts not in _sys.path:
+            _sys.path.insert(0, _scripts)
+        import backward_walk as _m
+        _backward_walk_mod = _m
+    return _backward_walk_mod
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())
 DB_PATH = Path.home() / "Documents/phi-beta-alpha/processed/lineage_1870.db"
@@ -1181,6 +1195,112 @@ def api_bridge_candidates(member_id):
     conn.close()
     candidates = [dict(r) for r in rows]
     return jsonify({"member_id": member_id, "count": len(candidates), "candidates": candidates})
+
+
+@app.route("/walk", methods=["GET", "POST"])
+def walk_begin():
+    """Start an Anchored Backward Walk from a living-verifiable anchor person."""
+    bw = _bw()
+
+    def _walk_error(msg):
+        conn = bw.open_db()
+        bw.ensure_schema(conn)
+        walks = bw.list_walks(conn)
+        conn.close()
+        return render_template("walk_begin.html",
+                               error=msg, walks=walks,
+                               nav_page="walk",
+                               TARGET_STATES=TARGET_STATES,
+                               DECADE_LADDER=bw.DECADE_LADDER)
+
+    if request.method == "POST":
+        first_name   = request.form.get("first_name", "").strip()
+        last_name    = request.form.get("last_name", "").strip()
+        birth_year   = request.form.get("birth_year", "").strip()
+        state        = request.form.get("state", "").strip()
+        county       = request.form.get("county", "").strip()
+        start_decade = int(request.form.get("start_decade", 1950))
+        verified_by  = request.form.get("verified_by", "").strip()
+        member_id    = request.form.get("member_id", "").strip() or None
+
+        if not all([first_name, last_name, birth_year, state]):
+            return _walk_error("First name, last name, birth year, and state are required.")
+
+        try:
+            birth_year = int(birth_year)
+        except ValueError:
+            return _walk_error("Birth year must be a number.")
+
+        anchor = {
+            "first_name":   first_name,
+            "last_name":    last_name,
+            "birth_year":   birth_year,
+            "state":        state,
+            "county":       county or None,
+            "start_decade": start_decade,
+            "verified_by":  verified_by or "unspecified",
+            "confidence":   100,
+            "source_table": "manual",
+            "source_id":    "anchor",
+        }
+
+        conn = bw.open_db()
+        bw.ensure_schema(conn)
+
+        fs_client = bw.WalkFamilySearchClient()
+        chain = bw.run_walk(anchor, conn, fs_client=fs_client if fs_client.available else None)
+        chain_id = bw.save_walk(chain, conn, member_id=member_id)
+        conn.close()
+
+        return redirect(url_for("walk_view", chain_id=chain_id))
+
+    # GET — show form + list of existing walks
+    conn = bw.open_db()
+    bw.ensure_schema(conn)
+    walks = bw.list_walks(conn)
+    conn.close()
+
+    prefill = {
+        "first_name": request.args.get("first", ""),
+        "last_name":  request.args.get("last", ""),
+        "birth_year": request.args.get("year", ""),
+        "state":      request.args.get("state", "Georgia"),
+        "county":     request.args.get("county", ""),
+    }
+    return render_template("walk_begin.html",
+                           walks=walks,
+                           nav_page="walk",
+                           prefill=prefill,
+                           TARGET_STATES=TARGET_STATES,
+                           DECADE_LADDER=bw.DECADE_LADDER)
+
+
+@app.route("/walk/<chain_id>")
+def walk_view(chain_id):
+    """View a completed Anchored Backward Walk chain."""
+    bw = _bw()
+    conn = bw.open_db()
+    bw.ensure_schema(conn)
+    chain = bw.load_walk(chain_id, conn)
+    conn.close()
+
+    if not chain:
+        abort(404)
+    return render_template("walk_chain.html", chain=chain, nav_page="walk")
+
+
+@app.route("/api/walk/<chain_id>")
+def api_walk(chain_id):
+    """JSON endpoint for a walk chain."""
+    bw = _bw()
+    conn = bw.open_db()
+    bw.ensure_schema(conn)
+    chain = bw.load_walk(chain_id, conn)
+    conn.close()
+
+    if not chain:
+        abort(404)
+    return jsonify(chain)
 
 
 if __name__ == "__main__":
