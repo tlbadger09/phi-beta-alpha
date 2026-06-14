@@ -1058,6 +1058,21 @@ footer strong { color: var(--gold); }
 }
 .btn-preview:hover { background: var(--gold); color: var(--blue); }
 
+.btn-walk {
+  display: inline-block;
+  padding: 7px 16px;
+  background: transparent;
+  border: 2px solid #4a7adf;
+  color: #4a7adf;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: bold;
+  transition: all 0.15s;
+  margin-right: 8px;
+}
+.btn-walk:hover { background: #4a7adf; color: #fff; }
+
 /* ── Explorer / Browse links ─────────────────────────────────────────────── */
 .btn-explore-link {
   font-size: 0.82rem; color: var(--gold); text-decoration: none;

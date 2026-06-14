@@ -390,6 +390,10 @@
            class="btn-begin">
           Begin Verification
         </a>
+        <a href="/walk?first={{ m.first_name|urlencode }}&last={{ m.last_name|urlencode }}&year={{ m.birth_year or '' }}&state={{ m.state|urlencode }}&county={{ m.county|urlencode }}"
+           class="btn-walk">
+          Backward Walk &#8594;
+        </a>
       </div>
       {% endif %}
 
