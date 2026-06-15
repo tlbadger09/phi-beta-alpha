@@ -686,14 +686,66 @@ class WalkFamilySearchClient(FamilySearchClient):
         except Exception:
             return []
 
+    def _fetch_person_facts(self, person_id: str) -> dict:
+        """
+        Fetch the full person record for person_id and return a dict with
+        birth_year, birth_place, residence_by_decade, given_name, surname.
+        The /platform/tree/ancestry endpoint omits facts; this fills them in.
+        """
+        try:
+            import requests as _req
+            resp = _req.get(
+                f"{self.BASE}/platform/tree/persons/{person_id}",
+                headers={"Authorization": f"Bearer {self.token}",
+                         "Accept": "application/json"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return {}
+            data = resp.json()
+        except Exception:
+            return {}
+
+        p     = (data.get("persons") or [{}])[0]
+        facts = p.get("facts", [])
+        birth_f  = next((f for f in facts if "/Birth" in f.get("type", "")), {})
+        birth_yr = None
+        try:
+            birth_yr = int(birth_f.get("date", {}).get("original", "")[:4])
+        except (ValueError, TypeError):
+            pass
+
+        resi_by_decade: dict[int, str] = {}
+        for f in facts:
+            if "/Residence" in f.get("type", "") or "/Census" in f.get("type", ""):
+                try:
+                    yr    = int(f.get("date", {}).get("original", "")[:4])
+                    dec   = round(yr / 10) * 10
+                    place = f.get("place", {}).get("original", "")
+                    if place:
+                        resi_by_decade[dec] = place
+                except (ValueError, TypeError):
+                    pass
+
+        name_parts = (p.get("names") or [{}])[0].get("nameForms", [{}])[0].get("parts", [])
+        given  = next((x["value"] for x in name_parts if "/Given"   in x.get("type", "")), "")
+        family = next((x["value"] for x in name_parts if "/Surname" in x.get("type", "")), "")
+        disp   = p.get("display", {})
+        return {
+            "given_name":          given  or disp.get("name", "").split()[0],
+            "surname":             family or " ".join(disp.get("name", "").split()[1:]),
+            "birth_year":          birth_yr,
+            "birth_place":         birth_f.get("place", {}).get("original", ""),
+            "residence_by_decade": resi_by_decade,
+        }
+
     def get_ancestors(self, person_id: str, generations: int = 4) -> list[dict]:
         """
-        Return a list of direct-line ancestors for person_id using
-        /platform/tree/ancestry.  Each entry is a normalised dict with
-        keys: fs_id, given_name, surname, birth_year, birth_place,
-        state, county, ascendancy_number, residence_by_decade.
-        ascendancy_number follows the standard Ahnentafel numbering
-        (1=self, 2=father, 3=mother, 4=pat-grandfather, …).
+        Return a list of direct-line ancestors for person_id.
+        Fetches the ancestry structure first, then fills in facts (birth,
+        residence) for each ancestor via individual person lookups, since
+        /platform/tree/ancestry omits the facts array.
+        ascendancy_number uses Ahnentafel (1=self, 2=father, 3=mother, …).
         """
         if not self.available:
             return []
@@ -724,54 +776,44 @@ class WalkFamilySearchClient(FamilySearchClient):
                 asc_num = int(asc_num_str)
             except (ValueError, TypeError):
                 asc_num = 0
-            facts   = p.get("facts", [])
-            birth_f = next((f for f in facts if "/Birth" in f.get("type", "")), {})
-            birth_yr = None
-            try:
-                birth_yr = int(birth_f.get("date", {}).get("original", "")[:4])
-            except (ValueError, TypeError):
-                pass
 
-            resi_by_decade: dict[int, str] = {}
-            for f in facts:
-                if "/Residence" in f.get("type", "") or "/Census" in f.get("type", ""):
-                    try:
-                        yr   = int(f.get("date", {}).get("original", "")[:4])
-                        dec  = round(yr / 10) * 10
-                        place = f.get("place", {}).get("original", "")
-                        if place:
-                            resi_by_decade[dec] = place
-                    except (ValueError, TypeError):
-                        pass
+            pid  = p.get("id", "")
+            disp = p.get("display", {})
 
-            name_parts = (p.get("names") or [{}])[0].get("nameForms", [{}])[0].get("parts", [])
-            given  = next((x["value"] for x in name_parts if "/Given"   in x.get("type", "")), "")
-            family = next((x["value"] for x in name_parts if "/Surname" in x.get("type", "")), "")
-            disp   = p.get("display", {})
-            birth_place = birth_f.get("place", {}).get("original", "")
+            # The ancestry endpoint returns display-only data without facts.
+            # Fetch full person data for each ancestor (skip self).
+            if asc_num > 1 and pid:
+                facts_data = self._fetch_person_facts(pid)
+            else:
+                facts_data = {}
 
-            # Extract state from birth place
-            bp_parts = [s.strip() for s in birth_place.split(",")]
+            given  = facts_data.get("given_name")  or disp.get("name", "").split()[0]
+            family = facts_data.get("surname") or " ".join(disp.get("name", "").split()[1:])
+            bplace = facts_data.get("birth_place", "")
+            bp_parts = [s.strip() for s in bplace.split(",")]
             bp_state = next((s for s in reversed(bp_parts)
                              if s.lower() not in ("united states", "usa", "")), None)
 
             out.append({
-                "fs_id":            p.get("id", ""),
-                "given_name":       given or disp.get("name", "").split()[0],
-                "surname":          family or " ".join(disp.get("name", "").split()[1:]),
-                "birth_year":       birth_yr,
-                "birth_place":      birth_place,
-                "state":            bp_state,
-                "ascendancy_number": asc_num,
-                "residence_by_decade": resi_by_decade,
+                "fs_id":               pid,
+                "given_name":          given,
+                "surname":             family,
+                "birth_year":          facts_data.get("birth_year"),
+                "birth_place":         bplace,
+                "state":               bp_state,
+                "ascendancy_number":   asc_num,
+                "residence_by_decade": facts_data.get("residence_by_decade", {}),
             })
         return out
 
     def best_ancestor_for_decade(self, person_id: str, decade: int,
-                                  max_gen: int = 4) -> dict | None:
+                                  max_gen: int = 4,
+                                  surname_filter: str | None = None) -> dict | None:
         """
         Return the Ahnentafel ancestor of person_id whose census record is
         closest to `decade`, prioritising the paternal line (even numbers).
+        If surname_filter is given, only consider ancestors sharing that surname
+        (prevents maternal-line crossover when the walk follows a specific surname).
         Returns None if the ancestry tree can't be fetched or has no match.
         """
         ancestors = self.get_ancestors(person_id, generations=max_gen)
@@ -779,6 +821,9 @@ class WalkFamilySearchClient(FamilySearchClient):
         best_dist = 999
         for anc in ancestors:
             if anc["ascendancy_number"] <= 1:   # skip self
+                continue
+            # Stay on the surname line when requested
+            if surname_filter and anc["surname"].lower() != surname_filter.lower():
                 continue
             for dec, place in anc["residence_by_decade"].items():
                 dist = abs(dec - decade)
@@ -814,6 +859,115 @@ class WalkFamilySearchClient(FamilySearchClient):
                     }
         return best if best_dist <= 15 else None
 
+    def find_person_in_fs(self, first_name: str, last_name: str,
+                           birth_year: int | None,
+                           state: str | None = None) -> dict | None:
+        """
+        Search FamilySearch tree for a person by name + birth year.
+        Returns {fs_id, given_name, surname, birth_year, birth_place,
+                 residence_by_decade} or None if no strong match.
+
+        When the person is not found directly (common for living people born
+        after ~1940 who have no census records), automatically tries to find
+        their parent in the FS tree (same surname, born 20-35 years earlier)
+        so the ancestry crossover can still chain backward from the parent.
+        """
+        if not self.available:
+            return None
+        try:
+            import requests as _req
+        except ImportError:
+            return None
+
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
+
+        def _search_fs(params_in: dict) -> dict | None:
+            try:
+                resp = _req.get(
+                    f"{self.BASE}/platform/tree/search",
+                    params=params_in, headers=headers, timeout=12,
+                )
+                if resp.status_code == 401:
+                    self.available = False
+                    return None
+                if resp.status_code != 200:
+                    return None
+                return resp.json()
+            except Exception:
+                return None
+
+        def _best_match(data: dict, surname: str,
+                        byr: int | None, byr_window: int = 5) -> dict | None:
+            for e in data.get("entries", []):
+                content = e.get("content", {}).get("gedcomx", {})
+                for p in content.get("persons", []):
+                    if p.get("display", {}).get("ascendancyNumber") not in ("1", None):
+                        continue
+                    pid = p.get("id", "")
+                    if not pid:
+                        continue
+                    facts = self._fetch_person_facts(pid)
+                    if not facts:
+                        continue
+                    if _name_sim(facts.get("surname", ""), surname) < 0.7:
+                        continue
+                    f_birth = facts.get("birth_year")
+                    if byr and f_birth and abs(f_birth - byr) > byr_window:
+                        continue
+                    return {"fs_id": pid, **facts}
+            return None
+
+        # ── 1. Direct search: client's own name + birth year ──────────────────
+        params: dict = {"count": 5}
+        if first_name: params["q.givenName"] = first_name
+        if last_name:  params["q.surname"]   = last_name
+        if birth_year:
+            params["q.birthLikeDate.from"] = str(birth_year - 3)
+            params["q.birthLikeDate.to"]   = str(birth_year + 3)
+        if state:
+            params["q.anyPlace"] = f"{state.title()}, United States"
+
+        data = _search_fs(params)
+        if data:
+            person = _best_match(data, last_name, birth_year)
+            if person and person.get("residence_by_decade"):
+                # Verify the residence decades are plausible for this birth year.
+                # A person born in 1958 should NOT have a 1900 census residence.
+                min_resi = min(person["residence_by_decade"].keys(), default=9999)
+                plausible = (birth_year is None) or (min_resi >= birth_year - 5)
+                if plausible:
+                    return person
+                # else: wrong era — fall through to parent search
+            elif person and person.get("birth_year") and (
+                    birth_year is None or abs(person["birth_year"] - birth_year) <= 5):
+                return person
+
+        # ── 2. Parent search: same first name + surname, born 20-35 years earlier ──
+        # Used when the client is a living person not in any census (born ~>1940).
+        # Searching with the SAME first name finds "Frank Sr." when given "Frank Jr."
+        # This covers common naming patterns in African American families.
+        if birth_year and birth_year > 1935:
+            parent_low  = birth_year - 35
+            parent_high = birth_year - 18
+            p_params: dict = {
+                "count": 5,
+                "q.surname": last_name,
+                "q.birthLikeDate.from": str(parent_low),
+                "q.birthLikeDate.to":   str(parent_high),
+            }
+            if first_name:
+                p_params["q.givenName"] = first_name
+            if state:
+                p_params["q.anyPlace"] = f"{state.title()}, United States"
+            p_data = _search_fs(p_params)
+            if p_data:
+                parent = _best_match(p_data, last_name, None, byr_window=999)
+                if parent and parent.get("residence_by_decade"):
+                    parent["_is_parent"] = True
+                    return parent
+
+        return None
+
 
 # ── Main walk engine ──────────────────────────────────────────────────────────
 
@@ -827,12 +981,46 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         start_decade (default 1950), verified_by (name of living kin)
     }
 
+    When no _fs_id is supplied and a FamilySearch client is available,
+    the engine automatically looks up the anchor in the FS tree so the
+    ancestry crossover and residence-cache paths can function without
+    the caller knowing any ancestor data in advance.
+
     Returns chain dict:
     {
         chain_id, anchor, links: [...], chain_product, weakest_link_decade,
         weakest_link_score, status
     }
     """
+    # Auto-resolve anchor in FamilySearch if not already known.
+    # This is the key step that lets clients supply just name + birth year.
+    anchor = dict(anchor)  # don't mutate caller's dict
+    if (fs_client and getattr(fs_client, "available", False)
+            and not anchor.get("_fs_id")):
+        fs_person = fs_client.find_person_in_fs(
+            anchor.get("first_name"), anchor.get("last_name"),
+            anchor.get("birth_year"), anchor.get("state"),
+        )
+        if fs_person:
+            if fs_person.get("_is_parent"):
+                # Client was too young for census corpus; FS returned a parent-generation
+                # person (e.g., gave "Frank Jr. b.1958" → found "Frank Sr. b.1933").
+                # Store client info as subject metadata; walk starts from the parent.
+                anchor["_subject_first"] = anchor.get("first_name")
+                anchor["_subject_last"]  = anchor.get("last_name")
+                anchor["_subject_birth"] = anchor.get("birth_year")
+                # Update anchor identity to the census-era person
+                anchor["first_name"] = fs_person.get("given_name") or anchor["first_name"]
+                anchor["last_name"]  = fs_person.get("surname")    or anchor["last_name"]
+                # Use parent's birth year if known; otherwise leave as None so
+                # expected_age defaults to 30 (no false crossover).
+                if fs_person.get("birth_year"):
+                    anchor["birth_year"] = fs_person["birth_year"]
+                else:
+                    anchor["birth_year"] = None
+            anchor["_fs_id"]         = fs_person["fs_id"]
+            anchor["_fs_resi_cache"] = fs_person.get("residence_by_decade", {})
+
     start_decade = anchor.get("start_decade", 1950)
     if start_decade not in DECADE_LADDER:
         start_decade = min(DECADE_LADDER, key=lambda d: abs(d - start_decade))
@@ -851,7 +1039,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         "county":          anchor.get("county"),
         "sex":             anchor.get("sex"),
         "race":            anchor.get("race"),
-        "age_at_census":   (start_decade - anchor["birth_year"]) if anchor.get("birth_year") else None,
+        "age_at_census":   max(0, start_decade - anchor["birth_year"]) if anchor.get("birth_year") else None,
         "source_table":    anchor.get("source_table", "manual"),
         "source_id":       anchor.get("source_id", "anchor"),
         "confidence":      anchor.get("confidence", 100),
@@ -876,30 +1064,108 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         # ── Generational crossover: person not yet born at target_decade ────────
         if current_birth and expected_age < 0:
             # Estimate how many generations back we need to go
-            # Each generation ≈ 28-30 years
-            generations_back  = math.ceil(abs(expected_age) / 30)
+            generations_back   = math.ceil(abs(expected_age) / 30)
             est_ancestor_birth = current_birth - (generations_back * 30)
 
+            # ── Fast path: use the confirmed FS ancestry tree ──────────────────
+            # When we have a FamilySearch person ID we trust the tree over OCR,
+            # because OCR can match unrelated same-surname children.
+            fs_ancestor_used = False
+            current_fs_id    = current.get("_fs_id") or current.get("source_id")
+            if (fs_client and getattr(fs_client, "available", False)
+                    and current_fs_id and current_fs_id != "anchor"):
+                anc = fs_client.best_ancestor_for_decade(
+                    current_fs_id, target_decade,
+                    surname_filter=current.get("last_name"),
+                )
+                if anc:
+                    cand = _fs_candidate(anc, target_decade)
+                    # Confidence: 85 if the tree has a residence fact in this
+                    # exact decade, 72 if from a nearby decade (dist ≤ 10).
+                    resi_dist = abs(anc.get("decade", target_decade) - target_decade)
+                    raw_score = 85 if resi_dist == 0 else 72
+
+                    ipums_val = None
+                    if target_decade in (1870, 1880, 1900):
+                        check = {
+                            "birth_year": cand.get("birth_year") or est_ancestor_birth,
+                            "state":  cand.get("state")  or current.get("state"),
+                            "county": cand.get("county") or current.get("county"),
+                            "sex":    cand.get("sex"),
+                        }
+                        ipums_val = check_ipums_validation(conn, check, target_decade)
+                        if ipums_val:
+                            raw_score = min(100, raw_score + ipums_val["bonus"])
+
+                    link = {
+                        "decade":          target_decade,
+                        "first_name":      cand.get("first_name"),
+                        "last_name":       cand.get("last_name") or current["last_name"],
+                        "birth_year":      cand.get("birth_year"),
+                        "birth_month":     None,
+                        "state":           cand.get("state")   or current.get("state"),
+                        "county":          cand.get("county")  or current.get("county"),
+                        "sex":             cand.get("sex"),
+                        "race":            cand.get("race"),
+                        "age_at_census":   cand.get("age_at_census"),
+                        "source_table":    "familysearch",
+                        "source_id":       cand.get("source_id"),
+                        "confidence":      raw_score,
+                        "ipums_validated": bool(ipums_val),
+                        "ipums_histid":    ipums_val["histid"] if ipums_val else None,
+                        "link_tier":       "ipums-validated" if ipums_val else "census",
+                        "runners_up":      [],
+                        "score_breakdown": {},
+                        "flags":           ["fs_ancestry_tree", "_generational_jump"],
+                        "is_gap":          False,
+                    }
+                    chain_links.append(link)
+                    # Fetch the ancestor's full residence history so subsequent
+                    # steps can use their known decade residences directly.
+                    anc_fs_id   = cand.get("source_id") or ""
+                    anc_decades: dict[int, str] = {}
+                    if anc_fs_id:
+                        anc_facts = fs_client._fetch_person_facts(anc_fs_id)
+                        anc_decades = anc_facts.get("residence_by_decade", {})
+                    current = {
+                        "first_name": cand.get("first_name"),
+                        "last_name":  cand.get("last_name")  or current["last_name"],
+                        "birth_year": cand.get("birth_year"),
+                        "state":      cand.get("state")      or current.get("state"),
+                        "county":     cand.get("county")     or current.get("county"),
+                        "sex":        cand.get("sex"),
+                        "race":       cand.get("race"),
+                        "birthplace": cand.get("birthplace"),
+                        "household":  None,
+                        "_fs_id":          anc_fs_id or current_fs_id,
+                        "_fs_resi_cache":  anc_decades,
+                    }
+                    fs_ancestor_used = True
+
+            if fs_ancestor_used:
+                if target_decade == 1870:
+                    break
+                continue
+
+            # ── Fallback: OCR surname search + optional FS text search ─────────
+            # For ancestor searches, birthplace is a better origin than current
+            # residence (e.g., a family that migrated GA after 1900 has SC ancestors).
+            bp_raw = (current.get("birthplace") or "").replace(", United States", "").strip()
+            ancestry_state = bp_raw.split(",")[-1].strip() if bp_raw else ""
+            if not ancestry_state:
+                ancestry_state = current.get("state") or ""
             candidates_raw = search_ancestry_by_surname(
-                conn, current["last_name"], current.get("state") or "",
-                est_ancestor_birth, county=current.get("county"),
+                conn, current["last_name"], ancestry_state,
+                est_ancestor_birth, county=None,  # broaden to full state
                 window=20,
             )
-            # Try FamilySearch ancestry tree first (most accurate for crossover)
             if fs_client and getattr(fs_client, "available", False):
-                current_fs_id = current.get("_fs_id") or current.get("source_id")
-                if current_fs_id and current_fs_id != "anchor":
-                    anc = fs_client.best_ancestor_for_decade(current_fs_id, target_decade)
-                    if anc:
-                        candidates_raw.insert(0, _fs_candidate(anc, target_decade))
-                else:
-                    # Fall back to surname search when no FS person ID available
-                    fs_hits = fs_client.search_census_decade(
-                        "", current["last_name"], est_ancestor_birth,
-                        current.get("state") or "", target_decade,
-                    )
-                    for r in fs_hits:
-                        candidates_raw.append(_fs_candidate(r, target_decade))
+                fs_hits = fs_client.search_census_decade(
+                    "", current["last_name"], est_ancestor_birth,
+                    ancestry_state or current.get("state") or "", target_decade,
+                )
+                for r in fs_hits:
+                    candidates_raw.append(_fs_candidate(r, target_decade))
 
             scored = []
             for cand in candidates_raw:
@@ -964,7 +1230,6 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                     "_generational_jump": True,
                 }
                 chain_links.append(link)
-                # Update current to the found ancestor so next steps track them
                 current = {
                     "first_name": best.get("first_name"),
                     "last_name":  best.get("last_name")  or current["last_name"],
@@ -982,6 +1247,127 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
             continue
 
         # ── Normal case: person exists (possibly as child) ─────────────────────
+
+        # Fast path: if we came from an FS ancestry crossover and have that
+        # person's cached residence data, use it directly when available.
+        # When the cache exists but has NO entry for this decade (meaning the
+        # person wasn't alive / recorded yet), flip to the ancestry tree for
+        # the parent instead.
+        resi_cache   = current.get("_fs_resi_cache") or {}
+        current_fs_c = current.get("_fs_id", "")
+        if resi_cache and current_fs_c and current_fs_c != "anchor":
+            if target_decade in resi_cache:
+                # Use the cached residence directly — no text search needed.
+                place = resi_cache[target_decade]
+                rp    = [s.strip() for s in place.split(",")]
+                rc_state  = next((s for s in reversed(rp)
+                                  if s.lower() not in ("united states", "usa", "")), None)
+                rc_county = None
+                seen_s = False
+                for part in reversed(rp):
+                    if part.lower() in ("united states", "usa", ""):
+                        continue
+                    if not seen_s:
+                        seen_s = True; continue
+                    rc_county = part; break
+                raw_score = 85
+                ipums_val = None
+                if target_decade in (1870, 1880, 1900):
+                    check = {"birth_year": current.get("birth_year"),
+                             "state": rc_state, "county": rc_county, "sex": current.get("sex")}
+                    ipums_val = check_ipums_validation(conn, check, target_decade)
+                    if ipums_val:
+                        raw_score = min(100, raw_score + ipums_val["bonus"])
+                link = {
+                    "decade":          target_decade,
+                    "first_name":      current.get("first_name"),
+                    "last_name":       current.get("last_name"),
+                    "birth_year":      current.get("birth_year"),
+                    "birth_month":     None,
+                    "state":           rc_state,
+                    "county":          rc_county,
+                    "sex":             current.get("sex"),
+                    "race":            current.get("race"),
+                    "age_at_census":   ((target_decade - current["birth_year"])
+                                        if current.get("birth_year") else None),
+                    "source_table":    "familysearch",
+                    "source_id":       current_fs_c,
+                    "confidence":      raw_score,
+                    "ipums_validated": bool(ipums_val),
+                    "ipums_histid":    ipums_val["histid"] if ipums_val else None,
+                    "link_tier":       "ipums-validated" if ipums_val else "census",
+                    "runners_up":      [],
+                    "score_breakdown": {},
+                    "flags":           ["fs_resi_cache"],
+                    "is_gap":          False,
+                }
+                chain_links.append(link)
+                if target_decade == 1870:
+                    break
+                continue
+            else:
+                # No cached entry → person wasn't recorded in this decade.
+                # Try the ancestry tree for a parent on the same surname line.
+                if fs_client and getattr(fs_client, "available", False):
+                    anc2 = fs_client.best_ancestor_for_decade(
+                        current_fs_c, target_decade,
+                        surname_filter=current.get("last_name"),
+                    )
+                    if anc2:
+                        cand2 = _fs_candidate(anc2, target_decade)
+                        rp2   = [s.strip() for s in (anc2.get("resi_place","") or "").split(",")]
+                        rs2   = next((s for s in reversed(rp2)
+                                      if s.lower() not in ("united states","usa","")), None)
+                        rc2   = None; seen2 = False
+                        for part in reversed(rp2):
+                            if part.lower() in ("united states","usa",""): continue
+                            if not seen2: seen2=True; continue
+                            rc2=part; break
+                        resi_dist2 = abs(anc2.get("decade", target_decade) - target_decade)
+                        raw2 = 85 if resi_dist2 == 0 else 72
+                        ipums2 = None
+                        if target_decade in (1870, 1880, 1900):
+                            check2 = {"birth_year": cand2.get("birth_year"),
+                                      "state": rs2, "county": rc2, "sex": None}
+                            ipums2 = check_ipums_validation(conn, check2, target_decade)
+                            if ipums2:
+                                raw2 = min(100, raw2 + ipums2["bonus"])
+                        link2 = {
+                            "decade": target_decade,
+                            "first_name": cand2.get("first_name"),
+                            "last_name":  cand2.get("last_name") or current["last_name"],
+                            "birth_year": cand2.get("birth_year"),
+                            "birth_month": None,
+                            "state":  rs2 or current.get("state"),
+                            "county": rc2 or current.get("county"),
+                            "sex": None, "race": None,
+                            "age_at_census": cand2.get("age_at_census"),
+                            "source_table": "familysearch",
+                            "source_id":    cand2.get("source_id"),
+                            "confidence":   raw2,
+                            "ipums_validated": bool(ipums2),
+                            "ipums_histid":    ipums2["histid"] if ipums2 else None,
+                            "link_tier": "ipums-validated" if ipums2 else "census",
+                            "runners_up": [], "score_breakdown": {},
+                            "flags": ["fs_ancestry_parent"], "is_gap": False,
+                        }
+                        chain_links.append(link2)
+                        anc2_facts = fs_client._fetch_person_facts(cand2.get("source_id",""))
+                        current = {
+                            "first_name": cand2.get("first_name"),
+                            "last_name":  cand2.get("last_name") or current["last_name"],
+                            "birth_year": cand2.get("birth_year"),
+                            "state":  rs2 or current.get("state"),
+                            "county": rc2 or current.get("county"),
+                            "sex": None, "race": None,
+                            "birthplace": cand2.get("birthplace"), "household": None,
+                            "_fs_id":         cand2.get("source_id",""),
+                            "_fs_resi_cache": anc2_facts.get("residence_by_decade", {}),
+                        }
+                        if target_decade == 1870:
+                            break
+                        continue
+
         candidates = search_decade(conn, current, target_decade, fs_client)
 
         # Score all candidates
@@ -1124,18 +1510,26 @@ def save_walk(chain: dict, conn: sqlite3.Connection,
     ensure_schema(conn)
     anchor = chain["anchor"]
 
+    # Build notes JSON to store subject (client) metadata when anchor was auto-shifted
+    notes_meta = {}
+    for k in ("_subject_first", "_subject_last", "_subject_birth"):
+        if anchor.get(k):
+            notes_meta[k] = anchor[k]
+    notes_json = json.dumps(notes_meta) if notes_meta else None
+
     conn.execute("""
         INSERT INTO walk_chains
           (chain_id, member_id, anchor_first_name, anchor_last_name,
            anchor_birth_year, anchor_state, anchor_county, anchor_start_decade,
            anchor_verified_by, chain_product, weakest_link_decade, weakest_link_score,
-           status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           status, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(chain_id) DO UPDATE SET
           chain_product=excluded.chain_product,
           weakest_link_decade=excluded.weakest_link_decade,
           weakest_link_score=excluded.weakest_link_score,
-          status=excluded.status
+          status=excluded.status,
+          notes=excluded.notes
     """, (
         chain["chain_id"], member_id,
         anchor.get("first_name"), anchor.get("last_name"),
@@ -1145,6 +1539,7 @@ def save_walk(chain: dict, conn: sqlite3.Connection,
         chain["weakest_link_decade"],
         chain["weakest_link_score"],
         chain["status"],
+        notes_json,
     ))
 
     for idx, link in enumerate(chain["links"]):
@@ -1202,18 +1597,32 @@ def load_walk(chain_id: str, conn: sqlite3.Connection) -> dict | None:
         d["is_gap"]          = bool(d.get("is_gap"))
         links.append(d)
 
+    notes_meta = {}
+    raw_notes = chain_meta.get("notes")
+    if raw_notes:
+        try:
+            notes_meta = json.loads(raw_notes)
+        except (ValueError, TypeError):
+            pass
+
+    anchor_dict = {
+        "first_name":    chain_meta["anchor_first_name"],
+        "last_name":     chain_meta["anchor_last_name"],
+        "birth_year":    chain_meta["anchor_birth_year"],
+        "state":         chain_meta["anchor_state"],
+        "county":        chain_meta["anchor_county"],
+        "start_decade":  chain_meta["anchor_start_decade"],
+        "verified_by":   chain_meta["anchor_verified_by"],
+    }
+    # Restore subject metadata if anchor was auto-shifted to a parent
+    for k in ("_subject_first", "_subject_last", "_subject_birth"):
+        if notes_meta.get(k):
+            anchor_dict[k] = notes_meta[k]
+
     return {
         "chain_id":            chain_meta["chain_id"],
         "member_id":           chain_meta.get("member_id"),
-        "anchor": {
-            "first_name":    chain_meta["anchor_first_name"],
-            "last_name":     chain_meta["anchor_last_name"],
-            "birth_year":    chain_meta["anchor_birth_year"],
-            "state":         chain_meta["anchor_state"],
-            "county":        chain_meta["anchor_county"],
-            "start_decade":  chain_meta["anchor_start_decade"],
-            "verified_by":   chain_meta["anchor_verified_by"],
-        },
+        "anchor":              anchor_dict,
         "links":               links,
         "chain_product":       chain_meta.get("chain_product", 0),
         "weakest_link_decade": chain_meta.get("weakest_link_decade"),

@@ -33,15 +33,16 @@
 <div class="walk-form">
   <h2>Anchored Backward Walk</h2>
   <p class="desc">
-    Start from a person that living family members can confirm — typically someone who appears in the
-    1950 census. The engine walks backward decade by decade to 1870, scoring each link and compounding
-    confidence. At 1870, the chain hands off to the Bridge Engine to cross the emancipation wall.
+    Enter a living person's information — just name, birth year, and state.
+    The engine automatically searches FamilySearch to trace the family tree, then walks
+    backward decade by decade through census records to 1870, scoring each link along the way.
+    At 1870, the chain hands off to the Bridge Engine to cross the emancipation wall.
   </p>
 
   <div class="walk-note">
-    <strong>What makes this different from a regular search:</strong> Every link in this chain is
-    anchored to a person a living relative can verify. Confidence compounds down — the weakest link
-    caps the trust of everything earlier. The output is a <em>proven descent path</em>, not a tree.
+    <strong>What you need:</strong> Name, birth year, and state of birth. You do not need to know
+    any ancestor names in advance — the system researches the lineage automatically using
+    FamilySearch records and digitized census data.
   </div>
 
   {% if error %}
@@ -64,11 +65,11 @@
     <div class="form-row">
       <div class="field">
         <label>Birth Year</label>
-        <input type="number" name="birth_year" placeholder="e.g. 1907" min="1800" max="1970"
+        <input type="number" name="birth_year" placeholder="e.g. 1958" min="1800" max="2005"
                value="{{ prefill.birth_year if prefill else '' }}" required>
       </div>
       <div class="field">
-        <label>Anchor Census Year</label>
+        <label>Earliest Census to Check</label>
         <select name="start_decade">
           {% for decade in DECADE_LADDER %}
             {% if decade >= 1900 %}
@@ -100,8 +101,8 @@
     </div>
     <div class="form-row">
       <div class="field">
-        <label>Confirmed by (living relative)</label>
-        <input type="text" name="verified_by" placeholder="e.g. Grandchild of Clifton Bacon">
+        <label>Confirmed by (optional — living relative who can verify)</label>
+        <input type="text" name="verified_by" placeholder="e.g. Self, or grandchild of the person">
       </div>
       <div class="field">
         <label>Member ID (optional)</label>
