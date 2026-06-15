@@ -118,10 +118,15 @@
     <input type="hidden" name="start_decade" value="1950">
 
     <div class="submit-row">
-      <button type="submit" class="submit-btn">Begin Research →</button>
-      <div class="submit-note">
+      <button type="submit" class="submit-btn" id="walk-submit-btn">Begin Research →</button>
+      <div class="submit-note" id="walk-submit-note">
         Takes 30–60 seconds.<br>FamilySearch + census OCR searched automatically.
       </div>
+    </div>
+    <div id="walk-progress" style="display:none; margin-top:1rem; padding:0.8rem 1rem;
+         background:#0d1a30; border:1px solid #2a4a9f; border-radius:5px; color:#9fc9ff; font-size:0.9rem;">
+      <span style="margin-right:0.6rem;">&#9650;</span>
+      Searching FamilySearch tree and 230,000+ census records&hellip; please wait.
     </div>
 
     <!-- Advanced (collapsed by default) -->
@@ -199,4 +204,17 @@
   </table>
 </div>
 {% endif %}
+
+<script>
+document.querySelector('.walk-form-card form').addEventListener('submit', function() {
+  var btn = document.getElementById('walk-submit-btn');
+  var note = document.getElementById('walk-submit-note');
+  var prog = document.getElementById('walk-progress');
+  btn.disabled = true;
+  btn.textContent = 'Searching…';
+  btn.style.opacity = '0.6';
+  if (note) note.style.display = 'none';
+  if (prog) prog.style.display = 'block';
+});
+</script>
 {% endblock %}

@@ -987,15 +987,17 @@ class WalkFamilySearchClient(FamilySearchClient):
                     birth_year is None or abs(person["birth_year"] - birth_year) <= 5):
                 return person
 
-        # ── 2. Parent search: same first name + surname, born 20-35 years earlier ──
+        # ── 2. Parent search: born 20-35 years earlier, same surname ──────────────
         # Used when the client is a living person not in any census (born ~>1940).
-        # Searching with the SAME first name finds "Frank Sr." when given "Frank Jr."
-        # This covers common naming patterns in African American families.
+        # First tries same first name ("Frank Sr." from "Frank Jr."), then falls
+        # back to surname-only to catch different-name parents.
         if birth_year and birth_year > 1935:
             parent_low  = birth_year - 35
             parent_high = birth_year - 18
+
+            # Pass 1: same first name (Sr./Jr. naming pattern)
             p_params: dict = {
-                "count": 5,
+                "count": 8,
                 "q.surname": last_name,
                 "q.birthLikeDate.from": str(parent_low),
                 "q.birthLikeDate.to":   str(parent_high),
@@ -1010,6 +1012,23 @@ class WalkFamilySearchClient(FamilySearchClient):
                 if parent and parent.get("residence_by_decade"):
                     parent["_is_parent"] = True
                     return parent
+
+            # Pass 2: surname only — handles different-name parents
+            if first_name:  # only retry if pass 1 had a first-name filter
+                p2_params: dict = {
+                    "count": 8,
+                    "q.surname": last_name,
+                    "q.birthLikeDate.from": str(parent_low),
+                    "q.birthLikeDate.to":   str(parent_high),
+                }
+                if state:
+                    p2_params["q.anyPlace"] = f"{state.title()}, United States"
+                p2_data = _search_fs(p2_params)
+                if p2_data:
+                    parent = _best_match(p2_data, last_name, None, byr_window=999)
+                    if parent and parent.get("residence_by_decade"):
+                        parent["_is_parent"] = True
+                        return parent
 
         return None
 
@@ -1546,6 +1565,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         "weakest_link_decade": weakest["decade"] if weakest else None,
         "weakest_link_score":  weakest["confidence"] if weakest else None,
         "status":              "draft",
+        "fs_available":        fs_client is not None and getattr(fs_client, "available", False),
     }
 
 
@@ -1557,11 +1577,13 @@ def save_walk(chain: dict, conn: sqlite3.Connection,
     ensure_schema(conn)
     anchor = chain["anchor"]
 
-    # Build notes JSON to store subject (client) metadata when anchor was auto-shifted
+    # Build notes JSON to store subject (client) metadata + runtime flags
     notes_meta = {}
     for k in ("_subject_first", "_subject_last", "_subject_birth"):
         if anchor.get(k):
             notes_meta[k] = anchor[k]
+    if chain.get("fs_available") is not None:
+        notes_meta["fs_available"] = bool(chain["fs_available"])
     notes_json = json.dumps(notes_meta) if notes_meta else None
 
     conn.execute("""
@@ -1676,6 +1698,7 @@ def load_walk(chain_id: str, conn: sqlite3.Connection) -> dict | None:
         "weakest_link_score":  chain_meta.get("weakest_link_score"),
         "status":              chain_meta.get("status", "draft"),
         "created_at":          chain_meta.get("created_at"),
+        "fs_available":        notes_meta.get("fs_available", True),
     }
 
 
