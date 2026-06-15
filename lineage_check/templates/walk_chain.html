@@ -112,9 +112,17 @@
 
 {% block content %}
 <div class="walk-header">
+  {% if chain.anchor._subject_first %}
+  <h2>Backward Walk: {{ chain.anchor._subject_first }} {{ chain.anchor._subject_last }}</h2>
+  <div style="color:#aaa; font-size:0.85rem; margin-bottom:0.3rem;">
+    Research subject — b.{{ chain.anchor._subject_birth }}.
+    Chain starts from earliest confirmable ancestor.
+  </div>
+  {% else %}
   <h2>Backward Walk: {{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</h2>
+  {% endif %}
   <div class="walk-meta">
-    <span>Born ~{{ chain.anchor.birth_year }}</span>
+    <span>Born ~{{ chain.anchor.birth_year or '?' }}</span>
     <span>{{ chain.anchor.county or '' }}{% if chain.anchor.county and chain.anchor.state %}, {% endif %}{{ chain.anchor.state or '' }}</span>
     <span>Anchor: {{ chain.anchor.start_decade }} census</span>
     {% if chain.anchor.verified_by %}
