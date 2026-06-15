@@ -141,6 +141,10 @@
 
 <div class="walk-actions">
   <a href="/walk">← All Walk Chains</a>
+  <a href="/walk/{{ chain.chain_id }}/certificate"
+     style="background:#1a3a8f; color:#fff; border-color:#1a3a8f; font-weight:bold;">
+    Certificate →
+  </a>
   <a href="/api/walk/{{ chain.chain_id }}">JSON</a>
   {% if chain.member_id %}
   <a href="/lineage/{{ chain.member_id }}">Lineage Timeline</a>

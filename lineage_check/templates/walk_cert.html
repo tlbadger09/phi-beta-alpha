@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backward Walk Certificate — {{ chain.anchor.first_name }} {{ chain.anchor.last_name }} — ΦΒΑ</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+      .cert-page { box-shadow: none; }
+    }
+
+    body { background: #f4f4f4; padding: 20px 0; font-family: Georgia, serif; }
+
+    .cert-page {
+      max-width: 820px;
+      margin: 0 auto;
+      background: white;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      padding: 48px;
+    }
+
+    .cert-border {
+      border: 6px double #c9a227;
+      padding: 32px;
+    }
+
+    .cert-header {
+      text-align: center;
+      border-bottom: 2px solid #c9a227;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+
+    .cert-org {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #1a3a8f;
+      margin-bottom: 6px;
+    }
+
+    .cert-greek { font-size: 3rem; color: #c9a227; line-height: 1; margin: 8px 0; }
+    .cert-title { font-size: 1.5rem; color: #1a3a8f; letter-spacing: 0.04em; margin: 12px 0 4px; }
+    .cert-subtitle { font-size: 0.88rem; color: #666; font-style: italic; }
+
+    .cert-intro {
+      font-size: 0.95rem; color: #333; line-height: 1.8;
+      text-align: center; margin: 24px 0 28px;
+    }
+    .cert-intro strong { color: #1a3a8f; font-size: 1.15rem; }
+
+    /* Chain timeline — displayed oldest (1870) first, anchor last */
+    .chain-timeline-cert {
+      position: relative;
+      padding-left: 36px;
+      margin: 20px 0 28px;
+    }
+    .chain-timeline-cert::before {
+      content: '';
+      position: absolute;
+      left: 14px; top: 0; bottom: 0;
+      width: 2px; background: #c9a227;
+    }
+
+    .chain-node {
+      position: relative;
+      margin-bottom: 16px;
+      padding-left: 16px;
+    }
+    .chain-node::before {
+      content: '';
+      position: absolute;
+      left: -22px; top: 9px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #c9a227;
+      border: 2px solid #1a3a8f;
+    }
+    .chain-node.is-anchor::before {
+      width: 16px; height: 16px;
+      left: -24px; top: 7px;
+      background: #1a3a8f;
+      border-color: #c9a227;
+    }
+    .chain-node.is-gap::before {
+      background: #ccc;
+      border-color: #999;
+    }
+
+    .node-decade {
+      font-size: 0.7rem; font-weight: bold; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #888; margin-bottom: 2px;
+    }
+    .node-name {
+      font-size: 1rem; font-weight: bold; color: #1a3a8f;
+    }
+    .node-name.gap-name { color: #bbb; font-style: italic; font-weight: normal; }
+    .node-loc {
+      font-size: 0.8rem; color: #555; margin-top: 2px;
+    }
+    .node-badges { display: inline-flex; gap: 5px; margin-left: 8px; vertical-align: middle; }
+    .nbadge {
+      font-size: 0.65rem; padding: 1px 6px; border-radius: 10px;
+      font-weight: bold; vertical-align: middle;
+    }
+    .nbadge.ipums  { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .nbadge.fs     { background: #ede7f6; color: #512da8; border: 1px solid #ce93d8; }
+    .nbadge.ocr    { background: #fff3e0; color: #e65100; border: 1px solid #ffcc02; }
+    .nbadge.anchor { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+    .node-conf {
+      font-size: 0.72rem; color: #888; margin-top: 3px;
+    }
+
+    /* Chain summary bar */
+    .chain-summary {
+      background: #f8f5e8;
+      border: 1px solid #c9a227;
+      border-radius: 6px;
+      padding: 14px 20px;
+      margin: 20px 0;
+      display: flex; gap: 2rem; flex-wrap: wrap;
+    }
+    .chain-summary-item { text-align: center; }
+    .cs-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #888; }
+    .cs-value { font-size: 1.1rem; font-weight: bold; color: #1a3a8f; margin-top: 2px; }
+    .cs-value.strong { color: #2e7d32; }
+    .cs-value.medium { color: #f57f17; }
+    .cs-value.weak   { color: #b71c1c; }
+
+    /* Enslaver section */
+    .enslaver-section {
+      background: #fff8e1;
+      border: 1px solid #f9a825;
+      border-left: 4px solid #f9a825;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 20px 0;
+    }
+    .enslaver-section h4 {
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: #7b5800; margin-bottom: 6px;
+    }
+    .enslaver-name { font-size: 0.95rem; font-weight: bold; color: #4a3000; }
+    .enslaver-details { font-size: 0.8rem; color: #5a4000; margin-top: 4px; line-height: 1.5; }
+    .enslaver-evidence { font-size: 0.72rem; color: #888; margin-top: 6px; font-style: italic; }
+
+    /* Note about methodology */
+    .method-note {
+      font-size: 0.75rem; color: #777; font-style: italic;
+      border-top: 1px solid #eee; padding-top: 14px; margin-top: 20px;
+      line-height: 1.6;
+    }
+
+    .cert-seal {
+      text-align: center; margin-top: 28px; padding-top: 20px;
+      border-top: 1px solid #c9a227;
+      display: flex; align-items: center; justify-content: center;
+      gap: 2rem; flex-wrap: wrap;
+    }
+    .cert-seal-symbol { font-size: 2.5rem; color: #c9a227; }
+    .cert-date { font-size: 0.8rem; color: #888; margin-top: 6px; }
+    .cert-num  { font-size: 0.65rem; color: #aaa; margin-top: 3px; letter-spacing: 0.1em; }
+
+    .print-btn {
+      background: #1a3a8f; color: white; border: none; border-radius: 6px;
+      padding: 11px 26px; font-size: 0.9rem; font-family: Georgia, serif;
+      cursor: pointer; margin-bottom: 20px;
+    }
+    .print-btn:hover { background: #2a4aaf; }
+  </style>
+</head>
+<body>
+
+<div style="max-width:820px; margin:0 auto 20px; padding:0 20px;" class="no-print">
+  <a href="/walk/{{ chain.chain_id }}" style="color:#4a7adf; text-decoration:none; font-size:0.9rem;">
+    ← Back to Walk Chain
+  </a>
+  <button class="print-btn" onclick="window.print()" style="float:right;">
+    Print / Save PDF
+  </button>
+</div>
+
+<div class="cert-page">
+  <div class="cert-border">
+
+    <!-- Header -->
+    <div class="cert-header">
+      <div class="cert-org">Phi Beta Alpha Historical Lineage Society, Inc.</div>
+      <div class="cert-greek">ΦΒΑ</div>
+      <div class="cert-title">Anchored Backward Walk — Lineage Chain</div>
+      <div class="cert-subtitle">
+        Documentary Descent Verification &nbsp;·&nbsp; EIN 41-4969999
+      </div>
+    </div>
+
+    <!-- Intro -->
+    <div class="cert-intro">
+      This document records the verified backward walk of<br>
+      <strong>{{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</strong><br>
+      anchored at the {{ chain.anchor.start_decade }} census
+      {% if chain.anchor.county %} in {{ chain.anchor.county }} County, {{ chain.anchor.state }}{% endif %}
+      {% if chain.anchor.verified_by %} and confirmed by <em>{{ chain.anchor.verified_by }}</em>{% endif %}.<br>
+      Each link was scored independently and cross-referenced against
+      the IPUMS linked census sample and FamilySearch family tree records.
+    </div>
+
+    <!-- Chain summary -->
+    {% set pct = ((chain.chain_product or 0) * 100)|int %}
+    <div class="chain-summary">
+      <div class="chain-summary-item">
+        <div class="cs-label">Chain Confidence</div>
+        <div class="cs-value {% if pct >= 40 %}strong{% elif pct >= 20 %}medium{% else %}weak{% endif %}">
+          {{ pct }}%
+        </div>
+      </div>
+      <div class="chain-summary-item">
+        <div class="cs-label">Links</div>
+        <div class="cs-value">{{ chain.links | selectattr('is_gap', 'equalto', false) | list | length }}</div>
+      </div>
+      <div class="chain-summary-item">
+        <div class="cs-label">Decades Covered</div>
+        <div class="cs-value">
+          {% set non_gap = chain.links | selectattr('is_gap', 'equalto', false) | list %}
+          {% if non_gap %}{{ non_gap[-1].decade }}–{{ non_gap[0].decade }}{% endif %}
+        </div>
+      </div>
+      {% if chain.weakest_link_decade %}
+      <div class="chain-summary-item">
+        <div class="cs-label">Weakest Link</div>
+        <div class="cs-value medium">{{ chain.weakest_link_decade }} ({{ chain.weakest_link_score }}/100)</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Chain timeline — oldest first (reversed) -->
+    <h3 style="font-size:0.82rem; text-transform:uppercase; letter-spacing:0.07em; color:#1a3a8f; margin-bottom:14px;">
+      Lineage Chain — {{ chain.anchor.last_name }} Family
+    </h3>
+
+    <div class="chain-timeline-cert">
+      {% for link in chain.links | reverse %}
+        {% set is_first = loop.last %}  {# after reverse, last iteration = original first = anchor #}
+        <div class="chain-node {% if loop.last %}is-anchor{% elif link.is_gap %}is-gap{% endif %}">
+          <div class="node-decade">{{ link.decade }} Census</div>
+
+          {% if link.is_gap %}
+            <div class="node-name gap-name">Record not located</div>
+            <div class="node-loc">Gap — not in available corpus</div>
+          {% else %}
+            <div class="node-name">
+              {{ link.first_name or '' }} {{ link.last_name or '' }}
+              <span class="node-badges">
+                {% if loop.last %}<span class="nbadge anchor">Anchor</span>{% endif %}
+                {% if link.ipums_validated %}<span class="nbadge ipums">IPUMS ★</span>{% endif %}
+                {% if link.source_table == 'familysearch' %}<span class="nbadge fs">FamilySearch</span>
+                {% elif link.source_table and 'ocr' in link.source_table %}<span class="nbadge ocr">Census OCR</span>{% endif %}
+              </span>
+            </div>
+            <div class="node-loc">
+              {% if link.county %}{{ link.county }} County, {% endif %}{{ link.state or '' }}
+              {% if link.birth_year %} &nbsp;·&nbsp; b.~{{ link.birth_year }}{% endif %}
+              {% if link.age_at_census %} &nbsp;·&nbsp; age {{ link.age_at_census }}{% endif %}
+            </div>
+            {% if not loop.last %}
+            <div class="node-conf">
+              Link score: {{ link.confidence }}/100
+              {% if link.source_id and link.source_table == 'familysearch' %}
+              &nbsp;·&nbsp; FS: {{ link.source_id }}
+              {% endif %}
+            </div>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Enslaver section (if surname match) -->
+    {% if enslaver %}
+    <div class="enslaver-section">
+      <h4>Historical Enslavement Record</h4>
+      <div class="enslaver-name">
+        {% if enslaver.probable %}Probable enslaver: {% endif %}{{ enslaver.name }}
+        ({{ enslaver.birth_year or '?' }}–{{ enslaver.death_year or '?' }})
+      </div>
+      <div class="enslaver-details">
+        {{ enslaver.county }} County, {{ enslaver.state }}
+        &nbsp;·&nbsp; {{ enslaver.enslaved_count }} enslaved persons ({{ enslaver.source_year }} slave schedule)
+        {% if enslaver.notes %}<br>{{ enslaver.notes }}{% endif %}
+      </div>
+      <div class="enslaver-evidence">Evidence basis: {{ enslaver.evidence }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Methodology note -->
+    <div class="method-note">
+      <strong>Methodology:</strong> Each decade link was scored on six signals: name similarity (25 pts),
+      age progression (20 pts), birthplace consistency (15 pts), household continuity (20 pts),
+      geography (15 pts), and sex/race flag (5 pts). Chain confidence is the product of all
+      individual link scores, compounded. The weakest link caps the chain's overall evidentiary trust.
+      Sources: IPUMS North Atlantic Population Project linked microdata; FamilySearch family tree;
+      digitized 1870 Georgia census OCR corpus (Phi Beta Alpha pipeline).
+    </div>
+
+    <!-- Seal + QR -->
+    <div class="cert-seal">
+      <div style="text-align:center;">
+        <div class="cert-seal-symbol">⚖</div>
+        <div style="color:#1a3a8f; font-weight:bold; font-size:0.82rem; margin-top:6px;">
+          Phi Beta Alpha Historical Lineage Society, Inc.
+        </div>
+        <div class="cert-date">Issued: {{ today }}</div>
+        <div class="cert-num">WALK CERT #{{ cert_id }}</div>
+        <div class="cert-num">Chain ID: {{ chain.chain_id }}</div>
+        <div class="cert-num" style="margin-top:2px;">phibetaalpha.org &nbsp;·&nbsp; EIN 41-4969999</div>
+      </div>
+      {% if qr_data_uri %}
+      <div style="text-align:center;">
+        <img src="{{ qr_data_uri }}" alt="Chain verification QR"
+             style="width:90px; height:90px; border:2px solid #c9a84c; border-radius:4px;">
+        <div style="font-size:.62rem; color:#888; margin-top:3px;">Scan to view chain</div>
+        <div style="font-size:.58rem; color:#aaa; word-break:break-all; max-width:110px;">{{ verify_url }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

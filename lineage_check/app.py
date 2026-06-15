@@ -1289,6 +1289,38 @@ def walk_view(chain_id):
     return render_template("walk_chain.html", chain=chain, nav_page="walk")
 
 
+@app.route("/walk/<chain_id>/certificate")
+def walk_certificate(chain_id):
+    """Printable lineage certificate for an Anchored Backward Walk chain."""
+    bw = _bw()
+    conn = bw.open_db()
+    bw.ensure_schema(conn)
+    chain = bw.load_walk(chain_id, conn)
+    conn.close()
+
+    if not chain:
+        abort(404)
+
+    cert_id     = hashlib.md5(f"walk-{chain_id}".encode()).hexdigest()[:12].upper()
+    today       = datetime.date.today().strftime("%B %d, %Y")
+    verify_url  = request.host_url.rstrip("/") + f"/walk/{chain_id}"
+    qr_data_uri = _make_qr_data_uri(verify_url)
+
+    surname_key = (chain.get("anchor", {}).get("last_name") or "").lower()
+    enslaver    = ENSLAVER_DB.get(surname_key)
+
+    return render_template(
+        "walk_cert.html",
+        chain=chain,
+        cert_id=cert_id,
+        today=today,
+        verify_url=verify_url,
+        qr_data_uri=qr_data_uri,
+        enslaver=enslaver,
+        nav_page="walk",
+    )
+
+
 @app.route("/api/walk/<chain_id>")
 def api_walk(chain_id):
     """JSON endpoint for a walk chain."""
