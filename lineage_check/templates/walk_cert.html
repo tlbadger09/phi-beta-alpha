@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Backward Walk Certificate — {{ chain.anchor.first_name }} {{ chain.anchor.last_name }} — ΦΒΑ</title>
+  <title>Backward Walk Certificate — {{ chain.anchor._subject_first or chain.anchor.first_name }} {{ chain.anchor._subject_last or chain.anchor.last_name }} — ΦΒΑ</title>
   <link rel="stylesheet" href="/static/style.css">
   <style>
     @media print {
@@ -199,10 +199,16 @@
     <!-- Intro -->
     <div class="cert-intro">
       This document records the verified backward walk of<br>
+      {% if chain.anchor._subject_first %}
+      <strong>{{ chain.anchor._subject_first }} {{ chain.anchor._subject_last }}</strong>
+      (b.{{ chain.anchor._subject_birth }})<br>
+      researched through <em>{{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</em>,
+      {% else %}
       <strong>{{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</strong><br>
+      {% endif %}
       anchored at the {{ chain.anchor.start_decade }} census
       {% if chain.anchor.county %} in {{ chain.anchor.county }} County, {{ chain.anchor.state }}{% endif %}
-      {% if chain.anchor.verified_by %} and confirmed by <em>{{ chain.anchor.verified_by }}</em>{% endif %}.<br>
+      {% if chain.anchor.verified_by and chain.anchor.verified_by != 'unspecified' %} and confirmed by <em>{{ chain.anchor.verified_by }}</em>{% endif %}.<br>
       Each link was scored independently and cross-referenced against
       the IPUMS linked census sample and FamilySearch family tree records.
     </div>
@@ -237,7 +243,7 @@
 
     <!-- Chain timeline — oldest first (reversed) -->
     <h3 style="font-size:0.82rem; text-transform:uppercase; letter-spacing:0.07em; color:#1a3a8f; margin-bottom:14px;">
-      Lineage Chain — {{ chain.anchor.last_name }} Family
+      Lineage Chain — {{ chain.anchor._subject_last or chain.anchor.last_name }} Family
     </h3>
 
     <div class="chain-timeline-cert">
