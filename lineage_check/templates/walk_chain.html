@@ -240,34 +240,11 @@
           </div>
         </div>
 
-        {% if link.score_breakdown %}
-        <div class="score-breakdown">
-          {% for k, v in link.score_breakdown.items() %}
-            <span class="{% if v > 0 %}nonzero{% endif %}">{{ k }}={{ v }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if link.runners_up %}
-        <div class="runners-up">
-          <div class="runners-up-label">Runners-up</div>
-          {% for ru in link.runners_up %}
-          <div class="runner">
-            <span>{{ ru.name }}</span>
-            <span>{{ ru.score }}/100</span>
-            <span style="color:#444">{{ ru.source }}</span>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
-
         {% if link.source_id and link.source_table %}
         <div class="source-link">
-          Source: {{ link.source_table }} / {{ link.source_id }}
           {% if link.source_table == 'familysearch' and link.source_id %}
-          &nbsp;—&nbsp;
           <a href="https://www.familysearch.org/ark:/61903/1:1:{{ link.source_id }}"
-             target="_blank" rel="noopener">View on FamilySearch</a>
+             target="_blank" rel="noopener">View record on FamilySearch ↗</a>
           {% endif %}
           {% if link.ipums_histid %}
           &nbsp;·&nbsp; IPUMS HISTID: {{ link.ipums_histid }}
