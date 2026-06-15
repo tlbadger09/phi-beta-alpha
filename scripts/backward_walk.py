@@ -363,7 +363,28 @@ def check_ipums_validation(conn: sqlite3.Connection,
     if not birth_year:
         return None
 
-    state_key = normalize_str(person.get("state") or person.get("birthplace") or "")
+    def _extract_state(raw: str) -> str:
+        """Pull the state name from a string that may include county or country."""
+        raw = normalize_str((raw or "").replace("united states", "").replace("usa", ""))
+        # Try known states directly
+        for candidate in [raw] + [p.strip() for p in raw.replace(",", " ").split()]:
+            if candidate in STATE_FIPS:
+                return candidate
+        # Multi-word state names
+        parts = [p.strip() for p in raw.split(",")]
+        for p in reversed(parts):
+            p = p.strip()
+            if p in STATE_FIPS:
+                return p
+        return raw.split(",")[-1].strip()
+
+    # For pre-migration records (1870-1900), birth state is more accurate than
+    # current residence for IPUMS lookup (family hadn't yet migrated north/GA)
+    bp_raw = person.get("birthplace") or ""
+    bp_state = _extract_state(bp_raw) if bp_raw else ""
+    res_state = _extract_state(person.get("state") or "")
+
+    state_key = bp_state if (bp_state and bp_state in STATE_FIPS) else res_state
     statefip  = STATE_FIPS.get(state_key)
     if not statefip:
         return None
@@ -547,41 +568,58 @@ def search_decade(conn: sqlite3.Connection, current: dict, target_decade: int,
     Find named candidates for current person in target_decade.
 
     Dispatch order:
-      1. OCR corpus (at 1870 only, our richest GA data)
-      2. FamilySearch (all decades, when FS_TOKEN available)
-      3. IPUMS demographics (1870/1880/1900, nameless — used as validation signals)
-
-    Returns list of candidate dicts, each enriched with 'search_source'.
+      1. OCR corpus (1870 + any decade we have data for in the target state)
+      2. FamilySearch (all decades, when FS_TOKEN available) — filtered by birth
+         state when known, to avoid cross-family disambiguation errors
     """
     candidates = []
     seen_ids: set[str] = set()
 
-    birth_year = current.get("birth_year")
-    last_name  = current.get("last_name") or ""
-    first_name = current.get("first_name") or ""
-    state      = current.get("state") or ""
-    county     = current.get("county") or ""
+    birth_year  = current.get("birth_year")
+    last_name   = current.get("last_name") or ""
+    first_name  = current.get("first_name") or ""
+    state       = current.get("state") or ""
+    county      = current.get("county") or ""
+    # birthplace is where they were BORN — more stable signal than residence state
+    birthplace  = current.get("birthplace") or ""
+    bp_state    = ""
+    if birthplace:
+        bp_parts = [p.strip() for p in birthplace.replace(", United States", "").split(",")]
+        bp_state = bp_parts[-1].strip() if bp_parts else ""
 
-    # ── 1870 OCR corpus ───────────────────────────────────────────────────────
-    if target_decade == 1870:
-        ocr_hits = search_ocr_by_name(
+    # ── OCR corpus — 1870 is primary, but also try for any decade with data ──
+    ocr_hits = search_ocr_by_name(
+        conn, last_name, first_name,
+        state=state, county=county,
+        birth_year=birth_year, window=5,
+    )
+    # If few results, broaden by dropping county
+    if county and len(ocr_hits) < 3:
+        ocr_hits += [r for r in search_ocr_by_name(
             conn, last_name, first_name,
-            state=state, county=county,
-            birth_year=birth_year, window=5,
-        )
-        for r in ocr_hits:
-            if r["ocr_id"] in seen_ids:
-                continue
-            seen_ids.add(r["ocr_id"])
-            r["_household"] = None  # could call get_household here; skip for speed
-            c = _ocr_candidate(r)
-            c["search_source"] = "ocr_corpus"
-            candidates.append(c)
+            state=state, birth_year=birth_year, window=5,
+        ) if r["ocr_id"] not in {h["ocr_id"] for h in ocr_hits}]
+    # If still few, try birth state (different from residence)
+    if bp_state and bp_state.lower() != state.lower() and len(ocr_hits) < 3:
+        ocr_hits += [r for r in search_ocr_by_name(
+            conn, last_name, first_name,
+            state=bp_state, birth_year=birth_year, window=5,
+        ) if r["ocr_id"] not in {h["ocr_id"] for h in ocr_hits}]
+
+    for r in ocr_hits:
+        if r["ocr_id"] in seen_ids:
+            continue
+        seen_ids.add(r["ocr_id"])
+        r["_household"] = None
+        c = _ocr_candidate(r)
+        c["search_source"] = "ocr_corpus"
+        candidates.append(c)
 
     # ── FamilySearch ──────────────────────────────────────────────────────────
     if fs_client and getattr(fs_client, "available", False):
         fs_hits = fs_client.search_census_decade(
-            first_name, last_name, birth_year, state, target_decade
+            first_name, last_name, birth_year, state, target_decade,
+            birth_state=bp_state or None,
         )
         for r in fs_hits:
             sid = r.get("fs_id", "")
@@ -605,7 +643,14 @@ class WalkFamilySearchClient(FamilySearchClient):
 
     def search_census_decade(self, given_name: str, surname: str,
                               birth_year: int | None, state: str,
-                              decade: int, window: int = 5) -> list[dict]:
+                              decade: int, window: int = 5,
+                              birth_state: str | None = None) -> list[dict]:
+        """
+        Search FS tree for a person at a given census decade.
+
+        birth_state: if provided, adds a birth-place filter to avoid picking up
+        same-name families from different states (critical for common surnames).
+        """
         if not self.available:
             return []
         try:
@@ -613,8 +658,6 @@ class WalkFamilySearchClient(FamilySearchClient):
         except ImportError:
             return []
 
-        # /platform/records/search requires a registered developer app (returns 404
-        # with a plain session token). /platform/tree/search works with fssessionid.
         params: dict = {"count": 20}
         if given_name:
             params["q.givenName"] = given_name
@@ -625,6 +668,8 @@ class WalkFamilySearchClient(FamilySearchClient):
             params["q.birthLikeDate.to"]   = str(birth_year + window)
         if state:
             params["q.residencePlace"] = f"{state.title()}, United States"
+        if birth_state and birth_state.lower() != (state or "").lower():
+            params["q.birthPlace"] = f"{birth_state.title()}, United States"
 
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         try:
@@ -1076,6 +1121,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                     and current_fs_id and current_fs_id != "anchor"):
                 anc = fs_client.best_ancestor_for_decade(
                     current_fs_id, target_decade,
+                    max_gen=6,  # look deeper for shallow trees
                     surname_filter=current.get("last_name"),
                 )
                 if anc:
@@ -1163,6 +1209,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                 fs_hits = fs_client.search_census_decade(
                     "", current["last_name"], est_ancestor_birth,
                     ancestry_state or current.get("state") or "", target_decade,
+                    birth_state=ancestry_state or None,
                 )
                 for r in fs_hits:
                     candidates_raw.append(_fs_candidate(r, target_decade))

@@ -113,29 +113,34 @@
 {% block content %}
 <div class="walk-header">
   {% if chain.anchor._subject_first %}
-  <h2>Backward Walk: {{ chain.anchor._subject_first }} {{ chain.anchor._subject_last }}</h2>
-  <div style="color:#aaa; font-size:0.85rem; margin-bottom:0.3rem;">
-    Research subject — b.{{ chain.anchor._subject_birth }}.
-    Chain starts from earliest confirmable ancestor.
+  <h2>{{ chain.anchor._subject_first }} {{ chain.anchor._subject_last }}</h2>
+  <div style="color:#aaa; font-size:0.85rem; margin-bottom:0.25rem;">
+    b.{{ chain.anchor._subject_birth }} &nbsp;·&nbsp;
+    Lineage researched from <strong style="color:#ccc;">{{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</strong>
+    (earliest confirmable ancestor in census)
   </div>
   {% else %}
-  <h2>Backward Walk: {{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</h2>
+  <h2>{{ chain.anchor.first_name }} {{ chain.anchor.last_name }}</h2>
   {% endif %}
   <div class="walk-meta">
+    {% if not chain.anchor._subject_first %}
     <span>Born ~{{ chain.anchor.birth_year or '?' }}</span>
     <span>{{ chain.anchor.county or '' }}{% if chain.anchor.county and chain.anchor.state %}, {% endif %}{{ chain.anchor.state or '' }}</span>
-    <span>Anchor: {{ chain.anchor.start_decade }} census</span>
-    {% if chain.anchor.verified_by %}
+    {% endif %}
+    {% if chain.anchor.verified_by and chain.anchor.verified_by != 'unspecified' %}
     <span>Confirmed by: {{ chain.anchor.verified_by }}</span>
     {% endif %}
     {% if chain.chain_product %}
       {% set pct = (chain.chain_product * 100)|int %}
-      &nbsp;&nbsp;
       <span class="chain-product {% if pct >= 60 %}strong{% elif pct >= 35 %}medium{% else %}weak{% endif %}">
         Chain confidence: {{ pct }}%
       </span>
     {% endif %}
-    <span style="float:right; color:#444; font-size:0.78rem;">{{ chain.chain_id }}</span>
+    {% set gap_count = chain.links | selectattr('is_gap') | list | length %}
+    {% if gap_count > 0 %}
+    <span style="color:#cf6e6e;">{{ gap_count }} gap{% if gap_count > 1 %}s{% endif %}</span>
+    {% endif %}
+    <span style="float:right; color:#333; font-size:0.75rem;">{{ chain.chain_id }}</span>
   </div>
 </div>
 
@@ -143,7 +148,6 @@
 <div class="weakest-note">
   <strong>Weakest link:</strong> {{ chain.weakest_link_decade }} census
   ({{ chain.weakest_link_score }}/100) — this link caps the chain's overall trust.
-  Strengthening this evidence improves the whole rope.
 </div>
 {% endif %}
 

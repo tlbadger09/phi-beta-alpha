@@ -1,131 +1,179 @@
 {% extends "base.html" %}
-{% block title %}Anchored Backward Walk{% endblock %}
+{% block title %}Lineage Research — Phi Beta Alpha{% endblock %}
 
 {% block head_extra %}
 <style>
-.walk-form { max-width: 680px; margin: 2rem auto; }
-.walk-form h2 { color: var(--gold, #c9a227); margin-bottom: 0.5rem; }
-.walk-form p.desc { color: #ccc; font-size: 0.92rem; margin-bottom: 1.5rem; line-height: 1.6; }
-.walk-form .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
-.walk-form .form-row .field { flex: 1; }
-.walk-form label { display: block; color: #aaa; font-size: 0.82rem; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.walk-form input, .walk-form select { width: 100%; padding: 0.5rem 0.7rem; background: #1a1a1a; border: 1px solid #333; color: #eee; border-radius: 4px; font-size: 0.95rem; }
-.walk-form input:focus, .walk-form select:focus { outline: none; border-color: var(--gold, #c9a227); }
-.walk-form .submit-btn { background: var(--blue, #1a3a8f); color: #fff; border: none; padding: 0.7rem 2rem; border-radius: 4px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
-.walk-form .submit-btn:hover { background: #2a4aaf; }
-.walk-error { background: #3a1a1a; border: 1px solid #8f1a1a; color: #ff9999; padding: 0.7rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
-.walk-note { background: #1a2a1a; border: 1px solid #2a6a2a; color: #9fc99f; padding: 0.7rem 1rem; border-radius: 4px; margin-bottom: 1.5rem; font-size: 0.88rem; }
+.walk-hero { max-width: 620px; margin: 2.5rem auto 0; }
+.walk-hero h2 { color: var(--gold, #c9a227); margin-bottom: 0.4rem; font-size: 1.7rem; }
+.walk-hero .tagline { color: #bbb; font-size: 1rem; margin-bottom: 2rem; line-height: 1.6; }
+
+.walk-form-card {
+  background: #111; border: 1px solid #2a2a2a; border-radius: 8px;
+  padding: 2rem; max-width: 620px; margin: 0 auto 1.5rem;
+}
+.field-row { display: flex; gap: 1rem; margin-bottom: 1.2rem; }
+.field-row .field { flex: 1; }
+.field-row .field.narrow { flex: 0 0 140px; }
+.field label {
+  display: block; color: #999; font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.35rem;
+}
+.field input, .field select {
+  width: 100%; padding: 0.6rem 0.8rem;
+  background: #1a1a1a; border: 1px solid #333; color: #eee;
+  border-radius: 5px; font-size: 0.95rem;
+  box-sizing: border-box;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--gold, #c9a227); }
+.field .hint { color: #555; font-size: 0.72rem; margin-top: 0.25rem; }
+
+.submit-row { margin-top: 1.5rem; display: flex; align-items: center; gap: 1rem; }
+.submit-btn {
+  background: var(--gold, #c9a227); color: #000; border: none;
+  padding: 0.75rem 2.5rem; border-radius: 5px; font-size: 1rem;
+  font-weight: bold; cursor: pointer; letter-spacing: 0.03em;
+}
+.submit-btn:hover { background: #dab033; }
+.submit-note { color: #555; font-size: 0.78rem; line-height: 1.5; }
+
+.advanced-toggle { color: #444; font-size: 0.78rem; cursor: pointer; margin-top: 1rem; }
+.advanced-toggle:hover { color: #888; }
+.advanced-section { display: none; margin-top: 1rem; border-top: 1px solid #222; padding-top: 1rem; }
+.advanced-section.open { display: block; }
+
+.walk-error {
+  background: #2a1111; border: 1px solid #8f1a1a; color: #ff9999;
+  padding: 0.7rem 1rem; border-radius: 5px; margin-bottom: 1rem;
+  max-width: 620px; margin-left: auto; margin-right: auto;
+}
+
+/* Previous chains */
 .walk-list { max-width: 860px; margin: 2.5rem auto 0; }
-.walk-list h3 { color: var(--gold, #c9a227); border-bottom: 1px solid #333; padding-bottom: 0.5rem; margin-bottom: 1rem; }
-.walk-list table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-.walk-list th { color: #888; text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #333; font-weight: normal; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.05em; }
-.walk-list td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1e1e1e; color: #ddd; }
+.walk-list h3 { color: var(--gold, #c9a227); border-bottom: 1px solid #222; padding-bottom: 0.4rem; margin-bottom: 1rem; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.walk-list table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.walk-list th { color: #666; text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #222; font-weight: normal; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em; }
+.walk-list td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1a1a1a; color: #ccc; }
 .walk-list td a { color: var(--blue, #4a7adf); text-decoration: none; }
 .walk-list td a:hover { text-decoration: underline; }
-.chain-product { font-weight: bold; }
-.chain-product.strong { color: #6ecf6e; }
-.chain-product.medium { color: #cfcf6e; }
-.chain-product.weak   { color: #cf6e6e; }
+.chain-pct { font-weight: bold; }
+.chain-pct.strong { color: #6ecf6e; }
+.chain-pct.medium { color: #cfcf6e; }
+.chain-pct.weak   { color: #cf6e6e; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="walk-form">
-  <h2>Anchored Backward Walk</h2>
-  <p class="desc">
-    Enter a living person's information — just name, birth year, and state.
-    The engine automatically searches FamilySearch to trace the family tree, then walks
-    backward decade by decade through census records to 1870, scoring each link along the way.
-    At 1870, the chain hands off to the Bridge Engine to cross the emancipation wall.
+<div class="walk-hero">
+  <h2>Trace Your Lineage to 1870</h2>
+  <p class="tagline">
+    Enter a name and birth year. The system searches FamilySearch, census records,
+    and 230,000+ digitized 1870 records to walk the family backward decade by decade.
+    No ancestor names needed.
   </p>
+</div>
 
-  <div class="walk-note">
-    <strong>What you need:</strong> Name, birth year, and state of birth. You do not need to know
-    any ancestor names in advance — the system researches the lineage automatically using
-    FamilySearch records and digitized census data.
-  </div>
+{% if error %}
+<div class="walk-error">{{ error }}</div>
+{% endif %}
 
-  {% if error %}
-  <div class="walk-error">{{ error }}</div>
-  {% endif %}
-
+<div class="walk-form-card">
   <form method="post" action="/walk">
-    <div class="form-row">
+
+    <!-- Core 3 fields -->
+    <div class="field-row">
       <div class="field">
         <label>First Name</label>
-        <input type="text" name="first_name" placeholder="e.g. Clifton"
-               value="{{ prefill.first_name if prefill else '' }}" required>
+        <input type="text" name="first_name" placeholder="e.g. Frank"
+               value="{{ prefill.first_name if prefill else '' }}" required autocomplete="off">
       </div>
       <div class="field">
         <label>Last Name</label>
-        <input type="text" name="last_name" placeholder="e.g. Bacon"
-               value="{{ prefill.last_name if prefill else '' }}" required>
+        <input type="text" name="last_name" placeholder="e.g. Badger"
+               value="{{ prefill.last_name if prefill else '' }}" required autocomplete="off">
       </div>
     </div>
-    <div class="form-row">
-      <div class="field">
+
+    <div class="field-row">
+      <div class="field narrow">
         <label>Birth Year</label>
-        <input type="number" name="birth_year" placeholder="e.g. 1958" min="1800" max="2005"
+        <input type="number" name="birth_year" placeholder="e.g. 1958"
+               min="1800" max="2005"
                value="{{ prefill.birth_year if prefill else '' }}" required>
       </div>
       <div class="field">
-        <label>Earliest Census to Check</label>
-        <select name="start_decade">
-          {% for decade in DECADE_LADDER %}
-            {% if decade >= 1900 %}
-            <option value="{{ decade }}" {% if decade == 1950 %}selected{% endif %}>{{ decade }}</option>
-            {% endif %}
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field">
         <label>State</label>
         <select name="state" required>
-          {% for s in TARGET_STATES %}
-          {% if s != 'All States' %}
+          {% for s in TARGET_STATES %}{% if s != 'All States' %}
           <option value="{{ s }}"
             {% if prefill and prefill.state == s %}selected
             {% elif not prefill and s == 'Georgia' %}selected
             {% endif %}>{{ s }}</option>
-          {% endif %}
-          {% endfor %}
+          {% endif %}{% endfor %}
         </select>
-      </div>
-      <div class="field">
-        <label>County (optional)</label>
-        <input type="text" name="county" placeholder="e.g. McIntosh"
-               value="{{ prefill.county if prefill else '' }}">
+        <div class="hint">State where this person was born or lived</div>
       </div>
     </div>
-    <div class="form-row">
-      <div class="field">
-        <label>Confirmed by (optional — living relative who can verify)</label>
-        <input type="text" name="verified_by" placeholder="e.g. Self, or grandchild of the person">
-      </div>
-      <div class="field">
-        <label>Member ID (optional)</label>
-        <input type="text" name="member_id" placeholder="e.g. MEMBER-BACON-CLIFTON-1906">
+
+    <!-- Hidden defaults -->
+    <input type="hidden" name="start_decade" value="1950">
+
+    <div class="submit-row">
+      <button type="submit" class="submit-btn">Begin Research →</button>
+      <div class="submit-note">
+        Takes 30–60 seconds.<br>FamilySearch + census OCR searched automatically.
       </div>
     </div>
-    <button type="submit" class="submit-btn">Begin Walk →</button>
+
+    <!-- Advanced (collapsed by default) -->
+    <div class="advanced-toggle" onclick="
+      const s = this.nextElementSibling;
+      s.classList.toggle('open');
+      this.textContent = s.classList.contains('open') ? '▲ Advanced options' : '▼ Advanced options';
+    ">▼ Advanced options</div>
+    <div class="advanced-section">
+      <div class="field-row">
+        <div class="field narrow">
+          <label>County (optional)</label>
+          <input type="text" name="county" placeholder="e.g. McIntosh"
+                 value="{{ prefill.county if prefill else '' }}">
+        </div>
+        <div class="field narrow">
+          <label>Earliest Census</label>
+          <select name="start_decade">
+            {% for decade in DECADE_LADDER %}{% if decade >= 1900 %}
+            <option value="{{ decade }}" {% if decade == 1950 %}selected{% endif %}>{{ decade }}</option>
+            {% endif %}{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Confirmed by (optional)</label>
+          <input type="text" name="verified_by" placeholder="Living relative who can verify this person">
+        </div>
+        <div class="field">
+          <label>Member ID (optional)</label>
+          <input type="text" name="member_id" placeholder="Leave blank for anonymous walk">
+        </div>
+      </div>
+    </div>
+
   </form>
 </div>
 
 {% if walks %}
 <div class="walk-list">
-  <h3>Existing Walk Chains</h3>
+  <h3>Previous Walk Chains</h3>
   <table>
     <thead>
       <tr>
-        <th>Anchor</th>
+        <th>Subject / Anchor</th>
         <th>Start</th>
         <th>State</th>
-        <th>Chain Product</th>
-        <th>Weakest Link</th>
+        <th>Confidence</th>
+        <th>Weakest</th>
         <th>Status</th>
-        <th>Created</th>
+        <th>Date</th>
       </tr>
     </thead>
     <tbody>
@@ -137,7 +185,7 @@
         <td>
           {% if w.chain_product %}
             {% set pct = (w.chain_product * 100)|int %}
-            <span class="chain-product {% if pct >= 60 %}strong{% elif pct >= 35 %}medium{% else %}weak{% endif %}">
+            <span class="chain-pct {% if pct >= 60 %}strong{% elif pct >= 35 %}medium{% else %}weak{% endif %}">
               {{ pct }}%
             </span>
           {% else %}—{% endif %}
