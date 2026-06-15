@@ -144,6 +144,13 @@
   </div>
 </div>
 
+{% if not chain.fs_available %}
+<div style="max-width:900px; margin:0 auto 1rem; background:#1a1a0a; border:1px solid #6a5a0a; border-radius:4px; padding:0.6rem 1rem; color:#cfb94a; font-size:0.85rem;">
+  <strong>Note:</strong> FamilySearch was not available during this walk (token may have expired).
+  Gaps in 1910–1940 may be fillable — re-run after refreshing the FS token.
+</div>
+{% endif %}
+
 {% if chain.weakest_link_decade and chain.weakest_link_score is not none %}
 <div class="weakest-note">
   <strong>Weakest link:</strong> {{ chain.weakest_link_decade }} census

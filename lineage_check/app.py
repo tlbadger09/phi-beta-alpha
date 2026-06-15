@@ -1231,6 +1231,16 @@ def walk_begin():
         except ValueError:
             return _walk_error("Birth year must be a number.")
 
+        # Auto-adjust start decade: person must be at least 15 to appear in census.
+        # If born 1936+, parent search will handle it; anchor start stays 1950 since
+        # run_walk's auto-resolve will shift the anchor to the parent generation.
+        if birth_year > 1935 and start_decade == 1950:
+            pass  # parent search in run_walk handles this case
+        elif birth_year <= 1935 and start_decade > birth_year + 15:
+            # Clamp start_decade so the person is at least 15 at that census
+            valid_decades = [d for d in bw.DECADE_LADDER if d >= birth_year + 15]
+            start_decade = max(valid_decades) if valid_decades else 1950
+
         anchor = {
             "first_name":   first_name,
             "last_name":    last_name,

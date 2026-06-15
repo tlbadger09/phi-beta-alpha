@@ -36,7 +36,7 @@ from member_lookup import (
     soundex, normalize_str, STATE_FIPS, GA_COUNTY_NHGIS,
     county_nhgis, query_ipums, infer_sex, FamilySearchClient,
 )
-from search import search_ocr_by_name, get_household, open_db as open_search_db
+from search import search_ocr_by_name, get_household, open_db as open_search_db, _nickname_variants
 
 DB_PATH = Path.home() / "Documents/phi-beta-alpha/processed/lineage_1870.db"
 
@@ -963,39 +963,46 @@ class WalkFamilySearchClient(FamilySearchClient):
             return None
 
         # ── 1. Direct search: client's own name + birth year ──────────────────
-        params: dict = {"count": 5}
-        if first_name: params["q.givenName"] = first_name
-        if last_name:  params["q.surname"]   = last_name
-        if birth_year:
-            params["q.birthLikeDate.from"] = str(birth_year - 3)
-            params["q.birthLikeDate.to"]   = str(birth_year + 3)
-        if state:
-            params["q.anyPlace"] = f"{state.title()}, United States"
+        # Try exact name first, then nickname variants (e.g. "Sam" → "Samuel")
+        first_name_variants = [first_name] + (_nickname_variants(first_name) if first_name else [])
+        found_person = None
+        for fname_try in first_name_variants:
+            params: dict = {"count": 5}
+            if fname_try: params["q.givenName"] = fname_try
+            if last_name: params["q.surname"]   = last_name
+            if birth_year:
+                params["q.birthLikeDate.from"] = str(birth_year - 3)
+                params["q.birthLikeDate.to"]   = str(birth_year + 3)
+            if state:
+                params["q.anyPlace"] = f"{state.title()}, United States"
 
-        data = _search_fs(params)
-        if data:
-            person = _best_match(data, last_name, birth_year)
-            if person and person.get("residence_by_decade"):
-                # Verify the residence decades are plausible for this birth year.
-                # A person born in 1958 should NOT have a 1900 census residence.
-                min_resi = min(person["residence_by_decade"].keys(), default=9999)
-                plausible = (birth_year is None) or (min_resi >= birth_year - 5)
-                if plausible:
-                    return person
-                # else: wrong era — fall through to parent search
-            elif person and person.get("birth_year") and (
-                    birth_year is None or abs(person["birth_year"] - birth_year) <= 5):
-                return person
+            data = _search_fs(params)
+            if data:
+                person = _best_match(data, last_name, birth_year)
+                if person and person.get("residence_by_decade"):
+                    min_resi = min(person["residence_by_decade"].keys(), default=9999)
+                    plausible = (birth_year is None) or (min_resi >= birth_year - 5)
+                    if plausible:
+                        found_person = person
+                        break
+                elif person and person.get("birth_year") and (
+                        birth_year is None or abs(person["birth_year"] - birth_year) <= 5):
+                    found_person = person
+                    break
+        if found_person:
+            return found_person
 
-        # ── 2. Parent search: same first name + surname, born 20-35 years earlier ──
+        # ── 2. Parent search: born 20-35 years earlier, same surname ──────────────
         # Used when the client is a living person not in any census (born ~>1940).
-        # Searching with the SAME first name finds "Frank Sr." when given "Frank Jr."
-        # This covers common naming patterns in African American families.
+        # First tries same first name ("Frank Sr." from "Frank Jr."), then falls
+        # back to surname-only to catch different-name parents.
         if birth_year and birth_year > 1935:
             parent_low  = birth_year - 35
             parent_high = birth_year - 18
+
+            # Pass 1: same first name (Sr./Jr. naming pattern)
             p_params: dict = {
-                "count": 5,
+                "count": 8,
                 "q.surname": last_name,
                 "q.birthLikeDate.from": str(parent_low),
                 "q.birthLikeDate.to":   str(parent_high),
@@ -1010,6 +1017,23 @@ class WalkFamilySearchClient(FamilySearchClient):
                 if parent and parent.get("residence_by_decade"):
                     parent["_is_parent"] = True
                     return parent
+
+            # Pass 2: surname only — handles different-name parents
+            if first_name:  # only retry if pass 1 had a first-name filter
+                p2_params: dict = {
+                    "count": 8,
+                    "q.surname": last_name,
+                    "q.birthLikeDate.from": str(parent_low),
+                    "q.birthLikeDate.to":   str(parent_high),
+                }
+                if state:
+                    p2_params["q.anyPlace"] = f"{state.title()}, United States"
+                p2_data = _search_fs(p2_params)
+                if p2_data:
+                    parent = _best_match(p2_data, last_name, None, byr_window=999)
+                    if parent and parent.get("residence_by_decade"):
+                        parent["_is_parent"] = True
+                        return parent
 
         return None
 
@@ -1242,6 +1266,14 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
                           "id": r.get("source_id","")} for r in scored[1:3]]
 
                 raw_score = best["_link_score"]
+
+                # Ambiguity penalty: many equally-scoring candidates → cap confidence.
+                # When 3+ candidates are within 5 pts of the best, we can't reliably
+                # pick the right ancestor — lower the ceiling to signal this.
+                near_ties = sum(1 for r in scored[1:] if r["_link_score"] >= raw_score - 5)
+                if near_ties >= 3:
+                    raw_score = min(raw_score, 55)
+
                 ipums_val = None
                 if target_decade in (1870, 1880, 1900):
                     check_person = {
@@ -1546,6 +1578,7 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         "weakest_link_decade": weakest["decade"] if weakest else None,
         "weakest_link_score":  weakest["confidence"] if weakest else None,
         "status":              "draft",
+        "fs_available":        fs_client is not None and getattr(fs_client, "available", False),
     }
 
 
@@ -1557,11 +1590,13 @@ def save_walk(chain: dict, conn: sqlite3.Connection,
     ensure_schema(conn)
     anchor = chain["anchor"]
 
-    # Build notes JSON to store subject (client) metadata when anchor was auto-shifted
+    # Build notes JSON to store subject (client) metadata + runtime flags
     notes_meta = {}
     for k in ("_subject_first", "_subject_last", "_subject_birth"):
         if anchor.get(k):
             notes_meta[k] = anchor[k]
+    if chain.get("fs_available") is not None:
+        notes_meta["fs_available"] = bool(chain["fs_available"])
     notes_json = json.dumps(notes_meta) if notes_meta else None
 
     conn.execute("""
@@ -1676,6 +1711,7 @@ def load_walk(chain_id: str, conn: sqlite3.Connection) -> dict | None:
         "weakest_link_score":  chain_meta.get("weakest_link_score"),
         "status":              chain_meta.get("status", "draft"),
         "created_at":          chain_meta.get("created_at"),
+        "fs_available":        notes_meta.get("fs_available", True),
     }
 
 
@@ -1751,10 +1787,11 @@ def _print_chain(chain: dict) -> None:
     print()
 
 
-def _test_bacon(conn: sqlite3.Connection) -> None:
+def _test_bacon(conn: sqlite3.Connection, fs_client=None) -> None:
     """Test the engine against the known Bacon lineage."""
     print("\n[TEST] Running Anchored Backward Walk on Bacon lineage...")
     print("  Anchor: Clifton Bacon, b.~1907, McIntosh County GA")
+    print(f"  FamilySearch: {'enabled' if fs_client and getattr(fs_client,'available',False) else 'DISABLED (FS_TOKEN not set?)'}")
     print("  Expected: walk reaches Simon/Washington Bacon in 1870")
     print()
 
@@ -1771,7 +1808,7 @@ def _test_bacon(conn: sqlite3.Connection) -> None:
         "source_id":     "anchor",
     }
 
-    chain = run_walk(anchor, conn)
+    chain = run_walk(anchor, conn, fs_client=fs_client)
     _print_chain(chain)
 
     chain_id = save_walk(chain, conn, member_id="MEMBER-BACON-CLIFTON-1906")
@@ -1825,7 +1862,8 @@ def main():
         return
 
     if args.test_bacon:
-        _test_bacon(conn)
+        fs = WalkFamilySearchClient()
+        _test_bacon(conn, fs_client=fs if fs.available else None)
         conn.close()
         return
 
