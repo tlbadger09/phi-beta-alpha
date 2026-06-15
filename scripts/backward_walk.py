@@ -1555,12 +1555,14 @@ def run_walk(anchor: dict, conn: sqlite3.Connection,
         if target_decade == 1870:
             break
 
-    # ── Chain product + weakest link ──────────────────────────────────────────
+    # ── Chain confidence + weakest link ───────────────────────────────────────
+    # Use geometric mean of link scores so a 7-link chain at 85/100 each reads
+    # as 85%, not 32% (the old product formula penalised long chains unfairly).
+    # Formula: (score1 * score2 * ... * scoreN) ^ (1/N)
     scored_links = [l for l in chain_links if not l["is_gap"] and l.get("source_id") != "anchor"]
     if scored_links:
-        product = 1.0
-        for l in scored_links:
-            product *= (l["confidence"] / 100.0)
+        log_sum = sum(math.log(max(l["confidence"], 1) / 100.0) for l in scored_links)
+        product = math.exp(log_sum / len(scored_links))   # geometric mean [0,1]
         weakest = min(scored_links, key=lambda x: x["confidence"])
     else:
         product = 0.0
